@@ -1,6 +1,7 @@
 package nuxtGin
 
 import (
+	"github.com/RapboyGao/nuxtGin/utils"
 	"github.com/arduino/go-paths-helper"   // 文件路径操作工具
 	jsoniter "github.com/json-iterator/go" // 高性能JSON处理库
 )
@@ -39,3 +40,7 @@ var GetConfig Config = func() Config {
 	config.Acquire()   // 从文件加载配置
 	return config      // 返回初始化后的配置
 }()
+
+func LogServer() {
+	utils.LogServer(false, GetConfig.GinPort)
+}
