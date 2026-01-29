@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
+	"github.com/mattn/go-isatty"
 	qrTerminal "github.com/mdp/qrterminal/v3"
 )
 
@@ -54,6 +55,7 @@ func serverURLs(https bool, port int, includeLocalhost bool) []string {
 // LogServer prints the server address in a formatted way.
 // It takes a boolean indicating whether to use HTTPS and an integer for the port.
 func LogServer(https bool, port int) {
+	ensureColorOutput()
 	fmt.Println("Server available:")
 	for _, href := range serverURLs(https, port, true) {
 		color.New(color.FgGreen, color.BgBlue).Println(href)
@@ -63,6 +65,7 @@ func LogServer(https bool, port int) {
 // LogServerWithQR prints the server address and renders a QR code in terminal.
 // It will prioritize the first non-localhost URL for QR, fallback to localhost.
 func LogServerWithQR(https bool, port int, includeLocalhost bool) {
+	ensureColorOutput()
 	urls := serverURLs(https, port, includeLocalhost)
 	if len(urls) == 0 {
 		fmt.Println("Server available: none")
@@ -83,4 +86,14 @@ func LogServerWithQR(https bool, port int, includeLocalhost bool) {
 	}
 	fmt.Println("Scan QR to open:")
 	qrTerminal.GenerateHalfBlock(qrURL, qrTerminal.M, os.Stdout)
+}
+
+func ensureColorOutput() {
+	stdoutTTY := isatty.IsTerminal(os.Stdout.Fd())
+	stderrTTY := isatty.IsTerminal(os.Stderr.Fd())
+
+	if !stdoutTTY && stderrTTY {
+		color.Output = os.Stderr
+		color.NoColor = false
+	}
 }
