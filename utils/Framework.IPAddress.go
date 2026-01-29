@@ -3,8 +3,12 @@ package utils
 import (
 	"fmt"
 	"net"
+	"os"
+	"sort"
+	"strings"
 
 	"github.com/fatih/color"
+	"github.com/mdp/qrterminal/v3"
 )
 
 // GetIPs returns a slice of IP addresses of the local machine.
@@ -29,20 +33,54 @@ func GetIPs(includeLocalhost bool) []string {
 	if includeLocalhost {
 		results = append(results, "localhost")
 	}
+	sort.Strings(results)
 	return results
+}
+
+func serverURLs(https bool, port int, includeLocalhost bool) []string {
+	protocol := "http://"
+	if https {
+		protocol = "https://"
+	}
+	portPart := fmt.Sprint(port)
+	ips := GetIPs(includeLocalhost)
+	urls := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		urls = append(urls, protocol+ip+":"+portPart)
+	}
+	return urls
 }
 
 // LogServer prints the server address in a formatted way.
 // It takes a boolean indicating whether to use HTTPS and an integer for the port.
 func LogServer(https bool, port int) {
 	fmt.Println("Server available:")
-	portPart := fmt.Sprint(port)
-	for _, ip := range GetIPs(true) {
-		protocol := "http://"
-		if https {
-			protocol = "https://"
-		}
-		href := protocol + ip + ":" + portPart
+	for _, href := range serverURLs(https, port, true) {
 		color.New(color.FgGreen, color.BgBlue).Println(href)
 	}
+}
+
+// LogServerWithQR prints the server address and renders a QR code in terminal.
+// It will prioritize the first non-localhost URL for QR, fallback to localhost.
+func LogServerWithQR(https bool, port int, includeLocalhost bool) {
+	urls := serverURLs(https, port, includeLocalhost)
+	if len(urls) == 0 {
+		fmt.Println("Server available: none")
+		return
+	}
+	fmt.Println("Server available:")
+	for _, href := range urls {
+		color.New(color.FgGreen, color.BgBlue).Println(href)
+	}
+
+	qrURL := urls[0]
+	for _, href := range urls {
+		if strings.HasPrefix(href, "http://localhost:") || strings.HasPrefix(href, "https://localhost:") {
+			continue
+		}
+		qrURL = href
+		break
+	}
+	fmt.Println("Scan QR to open:")
+	qrterminal.GenerateHalfBlock(qrURL, qrterminal.M, os.Stdout)
 }
