@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
-	"github.com/mdp/qrterminal/v3"
+	qrTerminal "github.com/mdp/qrterminal/v3"
 )
 
 // GetIPs returns a slice of IP addresses of the local machine.
@@ -82,5 +82,5 @@ func LogServerWithQR(https bool, port int, includeLocalhost bool) {
 		break
 	}
 	fmt.Println("Scan QR to open:")
-	qrterminal.GenerateHalfBlock(qrURL, qrterminal.M, os.Stdout)
+	qrTerminal.GenerateHalfBlock(qrURL, qrTerminal.M, os.Stdout)
 }
