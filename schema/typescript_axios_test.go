@@ -126,7 +126,8 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 	}
 	if strings.Contains(code, "export interface GetPersonDetailParams") ||
 		strings.Contains(code, "export interface GetPersonResumesByRangeParams") ||
-		strings.Contains(code, "export interface BatchUpsertResumesParams") {
+		strings.Contains(code, "export interface BatchUpsertResumesParams") ||
+		strings.Contains(code, "export interface GetPersonByIdParams") {
 		t.Fatalf("expected no params interfaces when params are not defined")
 	}
 	if !strings.Contains(code, "export async function getPersonDetail(requestBody?: GetPersonRequest): Promise<PersonDetailResponse> {") {
@@ -145,11 +146,11 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 	if strings.Contains(code, "Promise<GetPersonResumesByRangeResponse200Body>") {
 		t.Fatalf("should not generate wrapper response interface for array response")
 	}
-	if !strings.Contains(code, "export interface GetPersonByIdParams") {
-		t.Fatalf("expected params interface for :id path schema")
-	}
 	if !strings.Contains(code, "${encodeURIComponent(String(params.path?.id ?? ''))}") {
 		t.Fatalf("expected :id path param replacement in generated url")
+	}
+	if !strings.Contains(code, "export async function getPersonById(params: {") {
+		t.Fatalf("expected map-based params to be inlined in function signature")
 	}
 }
 
@@ -172,6 +173,10 @@ func TestGenerateAxiosFromSchemas_ValidationError(t *testing.T) {
 	}
 
 	_, err := GenerateAxiosFromSchemas("/api/v1", schemas)
+	outPath := filepath.Join(".generated", "schema", "invalid_params_api.ts")
+	if err := ExportAxiosFromSchemasToTSFile("/api/v1", schemas, outPath); err != nil {
+		t.Fatalf("ExportAxiosFromSchemasToTSFile returned error: %v", err)
+	}
 	if err == nil {
 		t.Fatalf("expected validation error when path/query params mismatch with path")
 	}

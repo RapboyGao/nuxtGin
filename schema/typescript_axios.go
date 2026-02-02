@@ -137,7 +137,7 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 		hasParams := hasPath || hasQuery || hasHeader || hasCookie
 		paramsType := ""
 		if hasParams {
-			paramsType, err = registry.ensureInterface(base+"Params", paramsShape)
+			paramsType, err = resolveModelType(registry, base+"Params", paramsShape)
 			if err != nil {
 				return "", fmt.Errorf("build params interface for schema[%d]: %w", i, err)
 			}
