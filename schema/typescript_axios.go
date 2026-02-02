@@ -72,7 +72,7 @@ type axiosFuncMeta struct {
 // GenerateAxiosFromSchemas converts schemas into TypeScript axios client code.
 // It also generates export interfaces for Params / RequestBody / ResponseBody,
 // and deduplicates identical interface shapes globally.
-func GenerateAxiosFromSchemas(schemas []Schema) (string, error) {
+func GenerateAxiosFromSchemas(basePath string, schemas []Schema) (string, error) {
 	registry := newTSInterfaceRegistry()
 	metas := make([]axiosFuncMeta, 0, len(schemas))
 
@@ -120,6 +120,15 @@ func GenerateAxiosFromSchemas(schemas []Schema) (string, error) {
 
 	var b strings.Builder
 	b.WriteString("import axios from 'axios';\n\n")
+	b.WriteString("const basePath = '")
+	b.WriteString(tsSingleQuoteString(basePath))
+	b.WriteString("';\n")
+	b.WriteString("const joinBasePath = (base: string, path: string): string => {\n")
+	b.WriteString("  if (!base) return path;\n")
+	b.WriteString("  const b = base.endsWith('/') ? base.slice(0, -1) : base;\n")
+	b.WriteString("  const p = path.startsWith('/') ? path : `/${path}`;\n")
+	b.WriteString("  return `${b}${p}`;\n")
+	b.WriteString("};\n\n")
 
 	needsCookieHelper := false
 	for _, m := range metas {
@@ -165,9 +174,9 @@ func GenerateAxiosFromSchemas(schemas []Schema) (string, error) {
 		b.WriteString(m.ResponseType)
 		b.WriteString("> => {\n")
 
-		b.WriteString("  const url = ")
+		b.WriteString("  const url = joinBasePath(basePath, ")
 		b.WriteString(buildTSURLExpr(m.Path))
-		b.WriteString(";\n")
+		b.WriteString(");\n")
 		b.WriteString("  const response = await axios.request<")
 		b.WriteString(m.ResponseType)
 		b.WriteString(">({\n")
@@ -198,6 +207,12 @@ func GenerateAxiosFromSchemas(schemas []Schema) (string, error) {
 	}
 
 	return strings.TrimSpace(b.String()) + "\n", nil
+}
+
+func tsSingleQuoteString(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `'`, `\'`)
+	return s
 }
 
 func buildParamsShape(s Schema) (map[string]any, bool, bool, bool, bool) {

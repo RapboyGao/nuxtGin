@@ -101,9 +101,12 @@ func TestGenerateAxiosFromSchemas_DeduplicateInterfaces(t *testing.T) {
 		},
 	}
 
-	code, err := GenerateAxiosFromSchemas(schemas)
+	code, err := GenerateAxiosFromSchemas("/api/v1", schemas)
 	if err != nil {
 		t.Fatalf("GenerateAxiosFromSchemas returned error: %v", err)
+	}
+	if !strings.Contains(code, "const basePath = '/api/v1';") {
+		t.Fatalf("expected generated code to include basePath")
 	}
 
 	if strings.Count(code, "export interface ") != 3 {
@@ -146,7 +149,7 @@ func TestGenerateAxiosFromSchemas_UsesStructAndCompositeTypes(t *testing.T) {
 		},
 	}
 
-	code, err := GenerateAxiosFromSchemas(schemas)
+	code, err := GenerateAxiosFromSchemas("/api/v1", schemas)
 	if err != nil {
 		t.Fatalf("GenerateAxiosFromSchemas returned error: %v", err)
 	}
@@ -156,6 +159,9 @@ func TestGenerateAxiosFromSchemas_UsesStructAndCompositeTypes(t *testing.T) {
 	}
 	if !strings.Contains(code, "${encodeURIComponent(String(params.path?.orderId ?? ''))}") {
 		t.Fatalf("expected generated url to include {orderId} path param replacement")
+	}
+	if !strings.Contains(code, "const url = joinBasePath(basePath, `/users/${encodeURIComponent(String(params.path?.id ?? ''))}/orders/${encodeURIComponent(String(params.path?.orderId ?? ''))}`);") {
+		t.Fatalf("expected generated code to join basePath and endpoint path")
 	}
 	if !strings.Contains(code, "ok: boolean;") {
 		t.Fatalf("expected response interface to use first 2xx response body")
