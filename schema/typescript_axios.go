@@ -71,10 +71,10 @@ type axiosFuncMeta struct {
 	HasReqBody   bool
 }
 
-// GenerateAxiosFromSchemas converts schemas into TypeScript axios client code.
+// generateAxiosFromSchemas converts schemas into TypeScript axios client code.
 // It also generates export interfaces for Params / RequestBody / ResponseBody,
 // and deduplicates identical interface shapes globally.
-func GenerateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) {
+func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) {
 	registry := newTSInterfaceRegistry()
 	metas := make([]axiosFuncMeta, 0, len(schemas))
 
@@ -211,9 +211,9 @@ func GenerateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 	return strings.TrimSpace(b.String()) + "\n", nil
 }
 
-// ExportAxiosFromSchemasToTSFile generates axios TypeScript code and writes it to
+// exportAxiosFromSchemasToTSFile generates axios TypeScript code and writes it to
 // a .ts file path that must be relative to the current working directory.
-func ExportAxiosFromSchemasToTSFile(baseURL string, schemas []Schema, relativeTSPath string) error {
+func exportAxiosFromSchemasToTSFile(baseURL string, schemas []Schema, relativeTSPath string) error {
 	if strings.TrimSpace(relativeTSPath) == "" {
 		return fmt.Errorf("relative ts path is required")
 	}
@@ -221,7 +221,7 @@ func ExportAxiosFromSchemasToTSFile(baseURL string, schemas []Schema, relativeTS
 		return fmt.Errorf("ts file path must be relative to cwd")
 	}
 
-	code, err := GenerateAxiosFromSchemas(baseURL, schemas)
+	code, err := generateAxiosFromSchemas(baseURL, schemas)
 	if err != nil {
 		return err
 	}
