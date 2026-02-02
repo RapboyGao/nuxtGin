@@ -34,3 +34,6 @@ go.work.sum
 # .idea/
 # .vscode/
 go.sum
+
+node_modules/
+pnpm-lock.yaml
