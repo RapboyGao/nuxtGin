@@ -235,13 +235,13 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 			args = append(args, reqArg)
 		}
 
-		b.WriteString("export const ")
+		b.WriteString("export async function ")
 		b.WriteString(m.FuncName)
-		b.WriteString(" = async (")
+		b.WriteString("(")
 		b.WriteString(strings.Join(args, ", "))
 		b.WriteString("): Promise<")
 		b.WriteString(m.ResponseType)
-		b.WriteString("> => {\n")
+		b.WriteString("> {\n")
 
 		b.WriteString("  const url = joinBasePath(basePath, ")
 		b.WriteString(buildTSURLExpr(m.Path))
@@ -276,7 +276,7 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 		} else {
 			b.WriteString("  return response.data;\n")
 		}
-		b.WriteString("};\n\n")
+		b.WriteString("}\n\n")
 	}
 
 	return strings.TrimSpace(b.String()) + "\n", nil

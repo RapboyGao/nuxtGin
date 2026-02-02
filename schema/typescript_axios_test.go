@@ -86,6 +86,9 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 			Name:   "get_person_by_id",
 			Method: HTTPMethodGet,
 			Path:   "/person/:id",
+			PathParams: map[string]any{
+				"id": "p-1",
+			},
 			Responses: []APIResponse{
 				{StatusCode: 200, Body: PersonDetailResponse{}},
 			},
@@ -118,7 +121,7 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 	if !strings.Contains(code, "resumes: ResumeItem[];") {
 		t.Fatalf("expected resumes field to be ResumeItem[]")
 	}
-	if !strings.Contains(code, "export const getPersonDetail") {
+	if !strings.Contains(code, "export async function getPersonDetail") {
 		t.Fatalf("expected generated axios function")
 	}
 	if strings.Contains(code, "export interface GetPersonDetailParams") ||
@@ -126,15 +129,15 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 		strings.Contains(code, "export interface BatchUpsertResumesParams") {
 		t.Fatalf("expected no params interfaces when params are not defined")
 	}
-	if !strings.Contains(code, "export const getPersonDetail = async (requestBody?: GetPersonRequest): Promise<PersonDetailResponse> => {") {
+	if !strings.Contains(code, "export async function getPersonDetail(requestBody?: GetPersonRequest): Promise<PersonDetailResponse> {") {
 		t.Fatalf("expected getPersonDetail function to have only requestBody argument")
 	}
-	if !strings.Contains(code, "export const getPersonResumesByRange = async (") ||
+	if !strings.Contains(code, "export async function getPersonResumesByRange(") ||
 		!strings.Contains(code, "requestBody?: GetPersonResumesByRangeRequest") ||
 		!strings.Contains(code, "Promise<ResumeItem[]>") {
 		t.Fatalf("expected response array type to be Promise<ResumeItem[]> without wrapper interface")
 	}
-	if !strings.Contains(code, "export const batchUpsertResumes = async (") ||
+	if !strings.Contains(code, "export async function batchUpsertResumes(") ||
 		!strings.Contains(code, "requestBody?: ResumeItem[]") ||
 		!strings.Contains(code, "Promise<Record<string, ResumeItem>>") {
 		t.Fatalf("expected request array and response dictionary to use direct TS types")
