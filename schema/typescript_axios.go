@@ -192,15 +192,6 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 	b.WriteString("  serializeRequest?: (value: TRequest) => unknown;\n")
 	b.WriteString("  deserializeResponse?: (value: unknown) => TResponse;\n")
 	b.WriteString("}\n\n")
-	b.WriteString("const basePath = '")
-	b.WriteString(tsSingleQuoteString(baseURL))
-	b.WriteString("';\n")
-	b.WriteString("const joinBasePath = (base: string, path: string): string => {\n")
-	b.WriteString("  if (!base) return path;\n")
-	b.WriteString("  const b = base.endsWith('/') ? base.slice(0, -1) : base;\n")
-	b.WriteString("  const p = path.startsWith('/') ? path : `/${path}`;\n")
-	b.WriteString("  return `${b}${p}`;\n")
-	b.WriteString("};\n\n")
 
 	needsCookieHelper := false
 	for _, m := range metas {
@@ -254,9 +245,9 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 		b.WriteString(m.ResponseType)
 		b.WriteString("> {\n")
 
-		b.WriteString("  const url = joinBasePath(basePath, ")
-		b.WriteString(buildTSURLExpr(m.Path))
-		b.WriteString(");\n")
+		b.WriteString("  const url = ")
+		b.WriteString(buildTSURLExprWithBase(baseURL, m.Path))
+		b.WriteString(";\n")
 		if m.HasReqBody {
 			b.WriteString("  const requestData = options?.serializeRequest ? options.serializeRequest(requestBody) : requestBody;\n")
 		}
@@ -348,12 +339,6 @@ func exportAxiosFromSchemasToTSFile(baseURL string, schemas []Schema, relativeTS
 	return os.WriteFile(fullPath, []byte(code), 0o644)
 }
 
-func tsSingleQuoteString(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `'`, `\'`)
-	return s
-}
-
 func buildParamsShape(s Schema) (map[string]any, bool, bool, bool, bool) {
 	params := map[string]any{}
 
@@ -437,6 +422,36 @@ func buildTSURLExpr(path string) string {
 		return "${encodeURIComponent(String(params.path?." + name + " ?? ''))}"
 	})
 	return "`" + template + "`"
+}
+
+func buildTSURLExprWithBase(baseURL string, path string) string {
+	fullPath := joinURLPath(baseURL, path)
+	return buildTSURLExpr(fullPath)
+}
+
+func joinURLPath(baseURL string, path string) string {
+	base := strings.TrimSpace(baseURL)
+	p := strings.TrimSpace(path)
+
+	if base == "" {
+		if strings.HasPrefix(p, "/") {
+			return p
+		}
+		return "/" + p
+	}
+	if p == "" {
+		if strings.HasPrefix(base, "/") {
+			return strings.TrimRight(base, "/")
+		}
+		return "/" + strings.TrimRight(base, "/")
+	}
+
+	base = strings.TrimRight(base, "/")
+	p = strings.TrimLeft(p, "/")
+	if !strings.HasPrefix(base, "/") {
+		base = "/" + base
+	}
+	return base + "/" + p
 }
 
 func resolveModelType(registry *tsInterfaceRegistry, fallbackName string, value any) (string, error) {
