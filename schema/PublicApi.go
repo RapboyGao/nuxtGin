@@ -64,19 +64,6 @@ type Schema struct {
 	// Path is the route template (supports :id and {id} placeholders).
 	// Path 是路由模板（支持 :id 和 {id} 占位符）。
 	Path string `json:"path"`
-	// Tags are optional classification labels.
-	// Tags 是可选的接口分类标签。
-	Tags []string `json:"tags,omitempty"`
-	// Summary is a short endpoint description.
-	// Summary 是接口简要说明。
-	Summary string `json:"summary,omitempty"`
-	// Description is a detailed endpoint description.
-	// Description 是接口详细说明。
-	Description string `json:"description,omitempty"`
-	// Deprecated marks the endpoint as deprecated.
-	// Deprecated 标记接口是否已废弃。
-	Deprecated bool `json:"deprecated,omitempty"`
-
 	// Parameters grouped by location.
 	// 按位置分组的参数定义。
 	PathParams   map[string]any `json:"pathParams,omitempty"`
@@ -86,10 +73,8 @@ type Schema struct {
 
 	// Request metadata and payload.
 	// 请求元信息与请求体定义。
-	RequestContentType string `json:"requestContentType,omitempty"`
-	RequestRequired    bool   `json:"requestRequired,omitempty"`
-	RequestBody        any    `json:"requestBody,omitempty"`
-	RequestExample     any    `json:"requestExample,omitempty"`
+	RequestRequired bool `json:"requestRequired,omitempty"`
+	RequestBody     any  `json:"requestBody,omitempty"`
 
 	// Unified response definitions.
 	// 统一响应定义（建议至少提供一个 2xx 响应作为成功响应）。
@@ -110,21 +95,9 @@ type APIResponse struct {
 	// StatusCode is the HTTP status code, e.g. 200/400/500.
 	// StatusCode 为 HTTP 状态码，如 200/400/500。
 	StatusCode int `json:"statusCode"`
-	// Description is a human-readable response description.
-	// Description 为响应说明文本。
-	Description string `json:"description,omitempty"`
-	// ContentType is the MIME type, e.g. application/json.
-	// ContentType 为响应内容类型，例如 application/json。
-	ContentType string `json:"contentType,omitempty"`
-	// Headers defines response headers.
-	// Headers 定义响应头结构。
-	Headers map[string]any `json:"headers,omitempty"`
 	// Body is the response payload schema/example object.
 	// Body 为响应体结构/示例对象。
 	Body any `json:"body,omitempty"`
-	// Example is an optional response example value.
-	// Example 为可选的响应示例值。
-	Example any `json:"example,omitempty"`
 }
 
 // RegisterToGin validates the Schema and registers it into a gin.IRouter.
