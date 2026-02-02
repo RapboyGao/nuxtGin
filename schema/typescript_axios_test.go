@@ -8,20 +8,23 @@ import (
 )
 
 type GetPersonRequest struct {
-	PersonID string `json:"personID"`
+	PersonID string  `json:"personID"`
+	TraceID  *string `json:"traceID,omitempty"`
 }
 
 type ResumeItem struct {
-	Company   string `json:"company"`
-	Title     string `json:"title"`
-	StartDate string `json:"startDate"`
-	EndDate   string `json:"endDate"`
+	Company    string `json:"company"`
+	Title      string `json:"title"`
+	StartDate  string `json:"startDate"`
+	EndDate    string `json:"endDate"`
+	Attachment []byte `json:"attachment,omitempty"`
 }
 
 type PersonDetailResponse struct {
 	PersonID string       `json:"personID"`
 	Name     string       `json:"name"`
 	Age      int          `json:"age"`
+	Salary   int64        `json:"salary"`
 	Resumes  []ResumeItem `json:"resumes"`
 }
 
@@ -121,6 +124,18 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 	if !strings.Contains(code, "resumes: ResumeItem[];") {
 		t.Fatalf("expected resumes field to be ResumeItem[]")
 	}
+	if !strings.Contains(code, "traceID?: string;") {
+		t.Fatalf("expected omitempty field to become optional property")
+	}
+	if !strings.Contains(code, "attachment?: string;") {
+		t.Fatalf("expected []byte field to be mapped as optional string")
+	}
+	if !strings.Contains(code, "salary: string;") {
+		t.Fatalf("expected int64 field to be mapped to string")
+	}
+	if !strings.Contains(code, "export interface AxiosConvertOptions") {
+		t.Fatalf("expected conversion options interface in generated code")
+	}
 	if !strings.Contains(code, "export async function getPersonDetail") {
 		t.Fatalf("expected generated axios function")
 	}
@@ -130,7 +145,7 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 		strings.Contains(code, "export interface GetPersonByIdParams") {
 		t.Fatalf("expected no params interfaces when params are not defined")
 	}
-	if !strings.Contains(code, "export async function getPersonDetail(requestBody: GetPersonRequest): Promise<PersonDetailResponse> {") {
+	if !strings.Contains(code, "export async function getPersonDetail(requestBody: GetPersonRequest, options?: AxiosConvertOptions<GetPersonRequest, PersonDetailResponse>): Promise<PersonDetailResponse> {") {
 		t.Fatalf("expected getPersonDetail function to have only requestBody argument")
 	}
 	if !strings.Contains(code, "export async function getPersonResumesByRange(") ||
@@ -151,6 +166,9 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 	}
 	if !strings.Contains(code, "export async function getPersonById(params: {") {
 		t.Fatalf("expected map-based params to be inlined in function signature")
+	}
+	if !strings.Contains(code, "options?: AxiosConvertOptions<never, PersonDetailResponse>") {
+		t.Fatalf("expected options generic for requestless function")
 	}
 	if strings.Contains(code, "} = {}): Promise<PersonDetailResponse>") {
 		t.Fatalf("expected getPersonById params to be required when path params exist")

@@ -188,6 +188,10 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 
 	var b strings.Builder
 	b.WriteString("import axios from 'axios';\n\n")
+	b.WriteString("export interface AxiosConvertOptions<TRequest = unknown, TResponse = unknown> {\n")
+	b.WriteString("  serializeRequest?: (value: TRequest) => unknown;\n")
+	b.WriteString("  deserializeResponse?: (value: unknown) => TResponse;\n")
+	b.WriteString("}\n\n")
 	b.WriteString("const basePath = '")
 	b.WriteString(tsSingleQuoteString(baseURL))
 	b.WriteString("';\n")
@@ -223,18 +227,29 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 	}
 
 	for _, m := range metas {
-		args := make([]string, 0, 2)
+		args := make([]string, 0, 3)
 		if m.HasParams {
 			args = append(args, "params: "+m.ParamsType)
 		}
 		if m.HasReqBody {
 			args = append(args, "requestBody: "+m.RequestType)
 		}
-
 		b.WriteString("export async function ")
 		b.WriteString(m.FuncName)
 		b.WriteString("(")
 		b.WriteString(strings.Join(args, ", "))
+		if len(args) > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString("options?: AxiosConvertOptions<")
+		if m.HasReqBody {
+			b.WriteString(m.RequestType)
+		} else {
+			b.WriteString("never")
+		}
+		b.WriteString(", ")
+		b.WriteString(m.ResponseType)
+		b.WriteString(">")
 		b.WriteString("): Promise<")
 		b.WriteString(m.ResponseType)
 		b.WriteString("> {\n")
@@ -242,6 +257,9 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 		b.WriteString("  const url = joinBasePath(basePath, ")
 		b.WriteString(buildTSURLExpr(m.Path))
 		b.WriteString(");\n")
+		if m.HasReqBody {
+			b.WriteString("  const requestData = options?.serializeRequest ? options.serializeRequest(requestBody) : requestBody;\n")
+		}
 		b.WriteString("  const response = await axios.request<")
 		b.WriteString(m.ResponseType)
 		b.WriteString(">({\n")
@@ -264,13 +282,19 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 			b.WriteString("    },\n")
 		}
 		if m.HasReqBody {
-			b.WriteString("    data: requestBody,\n")
+			b.WriteString("    data: requestData,\n")
 		}
 		b.WriteString("  });\n")
 		if m.ResponseType == "void" {
 			b.WriteString("  return;\n")
 		} else {
-			b.WriteString("  return response.data;\n")
+			b.WriteString("  const responseData = response.data as unknown;\n")
+			b.WriteString("  if (options?.deserializeResponse) {\n")
+			b.WriteString("    return options.deserializeResponse(responseData);\n")
+			b.WriteString("  }\n")
+			b.WriteString("  return responseData as ")
+			b.WriteString(m.ResponseType)
+			b.WriteString(";\n")
 		}
 		b.WriteString("}\n\n")
 	}
@@ -536,7 +560,7 @@ func renderStructBodyByType(t reflect.Type, registry *tsInterfaceRegistry) (stri
 		if f.PkgPath != "" {
 			continue
 		}
-		name, ok := jsonFieldName(f)
+		name, optional, ok := jsonFieldMeta(f)
 		if !ok {
 			continue
 		}
@@ -549,8 +573,12 @@ func renderStructBodyByType(t reflect.Type, registry *tsInterfaceRegistry) (stri
 		if isMultilineObjectType(fieldType) {
 			separator = ","
 		}
-		lines = append(lines, fmt.Sprintf("  %s: %s%s\n", tsPropName(name), fieldType, separator))
-		sigs = append(sigs, name+":"+fieldSig)
+		propName := tsPropName(name)
+		if optional {
+			propName += "?"
+		}
+		lines = append(lines, fmt.Sprintf("  %s: %s%s\n", propName, fieldType, separator))
+		sigs = append(sigs, name+fmt.Sprintf("(%t):", optional)+fieldSig)
 	}
 	sort.Strings(sigs)
 	return strings.Join(lines, ""), "{" + strings.Join(sigs, ";") + "}", nil
@@ -637,10 +665,12 @@ func tsTypeFromType(t reflect.Type, registry *tsInterfaceRegistry) (string, stri
 		return "boolean", "boolean", nil
 	case reflect.String:
 		return "string", "string", nil
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32,
 		reflect.Float32, reflect.Float64:
 		return "number", "number", nil
+	case reflect.Int64, reflect.Uint64:
+		return "string", "int64_as_string", nil
 	case reflect.Struct:
 		if t.Name() != "" {
 			name, err := registry.ensureNamedStructType(t)
@@ -664,6 +694,9 @@ func tsTypeFromType(t reflect.Type, registry *tsInterfaceRegistry) (string, stri
 		}
 		return "Record<string, " + elemType + ">", "record[" + elemSig + "]", nil
 	case reflect.Slice, reflect.Array:
+		if t.Elem().Kind() == reflect.Uint8 {
+			return "string", "bytes_as_base64", nil
+		}
 		elemType, elemSig, err := tsTypeFromType(t.Elem(), registry)
 		if err != nil {
 			return "", "", err
@@ -676,19 +709,20 @@ func tsTypeFromType(t reflect.Type, registry *tsInterfaceRegistry) (string, stri
 	}
 }
 
-func jsonFieldName(f reflect.StructField) (string, bool) {
+func jsonFieldMeta(f reflect.StructField) (string, bool, bool) {
 	tag := f.Tag.Get("json")
 	if tag == "-" {
-		return "", false
+		return "", false, false
 	}
+	optional := strings.Contains(tag, ",omitempty")
 	if tag == "" {
-		return f.Name, true
+		return f.Name, optional, true
 	}
 	name := strings.Split(tag, ",")[0]
 	if name == "" {
-		return f.Name, true
+		return f.Name, optional, true
 	}
-	return name, true
+	return name, optional, true
 }
 
 var tsIdentifierRegexp = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
