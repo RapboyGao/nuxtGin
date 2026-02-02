@@ -82,6 +82,14 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 				{StatusCode: 200, Body: map[string]ResumeItem{}},
 			},
 		},
+		{
+			Name:   "get_person_by_id",
+			Method: HTTPMethodGet,
+			Path:   "/person/:id",
+			Responses: []APIResponse{
+				{StatusCode: 200, Body: PersonDetailResponse{}},
+			},
+		},
 	}
 
 	outPath := filepath.Join(".generated", "schema", "person_api.ts")
@@ -133,5 +141,11 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 	}
 	if strings.Contains(code, "Promise<GetPersonResumesByRangeResponse200Body>") {
 		t.Fatalf("should not generate wrapper response interface for array response")
+	}
+	if !strings.Contains(code, "export interface GetPersonByIdParams") {
+		t.Fatalf("expected params interface for :id path schema")
+	}
+	if !strings.Contains(code, "${encodeURIComponent(String(params.path?.id ?? ''))}") {
+		t.Fatalf("expected :id path param replacement in generated url")
 	}
 }
