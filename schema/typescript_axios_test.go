@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type GetPersonRequest struct {
@@ -13,11 +14,11 @@ type GetPersonRequest struct {
 }
 
 type ResumeItem struct {
-	Company    string `json:"company"`
-	Title      string `json:"title"`
-	StartDate  string `json:"startDate"`
-	EndDate    string `json:"endDate"`
-	Attachment []byte `json:"attachment,omitempty"`
+	Company    string    `json:"company"`
+	Title      string    `json:"title"`
+	StartDate  time.Time `json:"startDate"`
+	EndDate    time.Time `json:"endDate"`
+	Attachment []byte    `json:"attachment,omitempty"`
 }
 
 type PersonDetailResponse struct {
@@ -123,6 +124,9 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 	}
 	if !strings.Contains(code, "resumes: ResumeItem[];") {
 		t.Fatalf("expected resumes field to be ResumeItem[]")
+	}
+	if !strings.Contains(code, "startDate: string;") || !strings.Contains(code, "endDate: string;") {
+		t.Fatalf("expected time.Time fields startDate/endDate to map as string")
 	}
 	if !strings.Contains(code, "traceID?: string;") {
 		t.Fatalf("expected omitempty field to become optional property")
