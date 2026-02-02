@@ -1,4 +1,4 @@
-package schema
+package apiSchema
 
 import (
 	"os"
@@ -58,7 +58,7 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 		t.Fatalf("chdir failed: %v", err)
 	}
 
-	schemas := []Schema{
+	schemas := []ApiSchema{
 		{
 			Name:               "get_person_detail",
 			Method:             HTTPMethodPost,
@@ -188,7 +188,7 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 }
 
 func TestGenerateAxiosFromSchemas_ValidationError(t *testing.T) {
-	schemas := []Schema{
+	schemas := []ApiSchema{
 		{
 			Name:   "invalid_params",
 			Method: HTTPMethodGet,

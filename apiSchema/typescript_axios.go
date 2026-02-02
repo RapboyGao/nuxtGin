@@ -1,4 +1,4 @@
-package schema
+package apiSchema
 
 import (
 	"fmt"
@@ -126,7 +126,7 @@ type axiosFuncMeta struct {
 // generateAxiosFromSchemas converts schemas into TypeScript axios client code.
 // It also generates export interfaces for Params / RequestBody / ResponseBody,
 // and deduplicates identical interface shapes globally.
-func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) {
+func generateAxiosFromSchemas(baseURL string, schemas []ApiSchema) (string, error) {
 	registry := newTSInterfaceRegistry()
 	metas := make([]axiosFuncMeta, 0, len(schemas))
 
@@ -364,7 +364,7 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 	return strings.TrimSpace(b.String()) + "\n", nil
 }
 
-func validateSchemaForAxios(s Schema) error {
+func validateSchemaForAxios(s ApiSchema) error {
 	pathParamNames := extractPathParams(s.Path)
 	pathParamSet := make(map[string]struct{}, len(pathParamNames))
 	for _, n := range pathParamNames {
@@ -386,7 +386,7 @@ func validateSchemaForAxios(s Schema) error {
 
 // exportAxiosFromSchemasToTSFile generates axios TypeScript code and writes it to
 // a .ts file path that must be relative to the current working directory.
-func exportAxiosFromSchemasToTSFile(baseURL string, schemas []Schema, relativeTSPath string) error {
+func exportAxiosFromSchemasToTSFile(baseURL string, schemas []ApiSchema, relativeTSPath string) error {
 	if strings.TrimSpace(relativeTSPath) == "" {
 		return fmt.Errorf("relative ts path is required")
 	}
@@ -410,7 +410,7 @@ func exportAxiosFromSchemasToTSFile(baseURL string, schemas []Schema, relativeTS
 	return os.WriteFile(fullPath, []byte(code), 0o644)
 }
 
-func buildParamsShape(s Schema) (map[string]any, bool, bool, bool, bool) {
+func buildParamsShape(s ApiSchema) (map[string]any, bool, bool, bool, bool) {
 	params := map[string]any{}
 
 	pathParams := cloneAnyMap(s.PathParams)
@@ -435,7 +435,7 @@ func buildParamsShape(s Schema) (map[string]any, bool, bool, bool, bool) {
 	return params, len(pathParams) > 0, len(s.QueryParams) > 0, len(s.HeaderParams) > 0, len(s.CookieParams) > 0
 }
 
-func inferPrimaryResponseBody(s Schema) any {
+func inferPrimaryResponseBody(s ApiSchema) any {
 	primary := inferPrimaryResponse(s)
 	if primary == nil {
 		return nil
@@ -443,7 +443,7 @@ func inferPrimaryResponseBody(s Schema) any {
 	return primary.Body
 }
 
-func inferPrimaryResponse(s Schema) *APIResponse {
+func inferPrimaryResponse(s ApiSchema) *APIResponse {
 	if len(s.Responses) == 0 {
 		return nil
 	}
@@ -557,7 +557,7 @@ func resolveModelType(registry *tsInterfaceRegistry, fallbackName string, value 
 	return t, nil
 }
 
-func schemaBaseName(s Schema, index int) string {
+func schemaBaseName(s ApiSchema, index int) string {
 	if n := strings.TrimSpace(s.Name); n != "" {
 		return toUpperCamel(n)
 	}

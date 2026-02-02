@@ -1,4 +1,4 @@
-package schema
+package apiSchema
 
 import (
 	"errors"
@@ -48,13 +48,13 @@ func (m HTTPMethod) IsValid() bool {
 	}
 }
 
-// Schema describes a single API endpoint definition used for:
+// ApiSchema describes a single API endpoint definition used for:
 // 1) runtime route registration in Gin; and
 // 2) TypeScript axios client generation.
-// Schema 描述一个接口端点定义，可用于：
+// ApiSchema 描述一个接口端点定义，可用于：
 // 1) 在 Gin 中注册运行时路由；
 // 2) 生成 TypeScript axios 客户端代码。
-type Schema struct {
+type ApiSchema struct {
 	// Name is a logical API name, used by TS generator to build function/type names.
 	// Name 是接口逻辑名称，TS 生成器会优先用它构造函数名和类型名。
 	Name string `json:"name,omitempty"`
@@ -113,7 +113,7 @@ type APIResponse struct {
 // It checks router/method/path/handler before registration.
 // RegisterToGin 会先校验 Schema（router、method、path、handler），
 // 校验通过后将该接口注册到 gin.IRouter。
-func (a Schema) RegisterToGin(router gin.IRouter) error {
+func (a ApiSchema) RegisterToGin(router gin.IRouter) error {
 	if router == nil {
 		return errors.New("router is nil")
 	}
@@ -138,7 +138,7 @@ func (a Schema) RegisterToGin(router gin.IRouter) error {
 // It stops on first error and returns the failed index for quick diagnosis.
 // RegisterAPIsToGin 按顺序批量注册接口，遇到第一个错误即停止，
 // 并在错误中携带失败索引，方便快速定位。
-func RegisterAPIsToGin(router gin.IRouter, apis []Schema) error {
+func RegisterAPIsToGin(router gin.IRouter, apis []ApiSchema) error {
 	for i := range apis {
 		if err := apis[i].RegisterToGin(router); err != nil {
 			return fmt.Errorf("register api[%d] failed: %w", i, err)
@@ -151,7 +151,7 @@ func RegisterAPIsToGin(router gin.IRouter, apis []Schema) error {
 // basePath is prefixed to each endpoint path in generated code.
 // GenerateAxiosFromSchemas 根据 Schema 列表生成 TypeScript axios 客户端代码。
 // basePath 会作为统一前缀拼接到每个接口路径。
-func GenerateAxiosFromSchemas(basePath string, schemas []Schema) (string, error) {
+func GenerateAxiosFromSchemas(basePath string, schemas []ApiSchema) (string, error) {
 	return generateAxiosFromSchemas(basePath, schemas)
 }
 
@@ -159,7 +159,7 @@ func GenerateAxiosFromSchemas(basePath string, schemas []Schema) (string, error)
 // relative to current working directory (cwd). Absolute paths are rejected.
 // ExportAxiosFromSchemasToTSFile 生成 TS axios 代码并写入相对 cwd 的文件路径，
 // 不允许传入绝对路径。
-func ExportAxiosFromSchemasToTSFile(basePath string, schemas []Schema, relativeTSPath string) error {
+func ExportAxiosFromSchemasToTSFile(basePath string, schemas []ApiSchema, relativeTSPath string) error {
 	return exportAxiosFromSchemasToTSFile(basePath, schemas, relativeTSPath)
 }
 
@@ -170,7 +170,7 @@ func ExportAxiosFromSchemasToTSFile(basePath string, schemas []Schema, relativeT
 // RegisterSchemasAndExportTSInDevMode 会在 Gin 处于开发模式（gin.DebugMode）时，
 // 同时完成路由批量注册与 TS 客户端导出；默认输出路径为
 // vue/composables/my-schemas.ts。非开发模式下不执行任何操作并返回 nil。
-func RegisterSchemasAndExportTSInDevMode(router gin.IRouter, schemas []Schema, basePath string) error {
+func RegisterSchemasAndExportTSInDevMode(router gin.IRouter, schemas []ApiSchema, basePath string) error {
 	return RegisterSchemasAndExportTSInDevModeWithPath(router, schemas, basePath, "vue/composables/my-schemas.ts")
 }
 
@@ -178,7 +178,7 @@ func RegisterSchemasAndExportTSInDevMode(router gin.IRouter, schemas []Schema, b
 // RegisterSchemasAndExportTSInDevMode, but allows a custom TS output path.
 // RegisterSchemasAndExportTSInDevModeWithPath 与默认函数行为一致，
 // 但允许自定义 TS 输出路径。
-func RegisterSchemasAndExportTSInDevModeWithPath(router gin.IRouter, schemas []Schema, basePath string, relativeTSPath string) error {
+func RegisterSchemasAndExportTSInDevModeWithPath(router gin.IRouter, schemas []ApiSchema, basePath string, relativeTSPath string) error {
 	if gin.Mode() != gin.DebugMode {
 		return nil
 	}
