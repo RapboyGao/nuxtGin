@@ -153,3 +153,31 @@ func GenerateAxiosFromSchemas(basePath string, schemas []Schema) (string, error)
 func ExportAxiosFromSchemasToTSFile(basePath string, schemas []Schema, relativeTSPath string) error {
 	return exportAxiosFromSchemasToTSFile(basePath, schemas, relativeTSPath)
 }
+
+// RegisterSchemasAndExportTSInDevMode registers schemas to Gin and exports TS axios
+// client code only when Gin is running in development mode (gin.DebugMode).
+// It uses the default output path: vue/composables/my-schemas.ts.
+// In non-development mode, this function does nothing and returns nil.
+// RegisterSchemasAndExportTSInDevMode 会在 Gin 处于开发模式（gin.DebugMode）时，
+// 同时完成路由批量注册与 TS 客户端导出；默认输出路径为
+// vue/composables/my-schemas.ts。非开发模式下不执行任何操作并返回 nil。
+func RegisterSchemasAndExportTSInDevMode(router gin.IRouter, schemas []Schema, basePath string) error {
+	return RegisterSchemasAndExportTSInDevModeWithPath(router, schemas, basePath, "vue/composables/my-schemas.ts")
+}
+
+// RegisterSchemasAndExportTSInDevModeWithPath behaves like
+// RegisterSchemasAndExportTSInDevMode, but allows a custom TS output path.
+// RegisterSchemasAndExportTSInDevModeWithPath 与默认函数行为一致，
+// 但允许自定义 TS 输出路径。
+func RegisterSchemasAndExportTSInDevModeWithPath(router gin.IRouter, schemas []Schema, basePath string, relativeTSPath string) error {
+	if gin.Mode() != gin.DebugMode {
+		return nil
+	}
+	if strings.TrimSpace(relativeTSPath) == "" {
+		relativeTSPath = "vue/composables/my-schemas.ts"
+	}
+	if err := RegisterAPIsToGin(router, schemas); err != nil {
+		return err
+	}
+	return ExportAxiosFromSchemasToTSFile(basePath, schemas, relativeTSPath)
+}
