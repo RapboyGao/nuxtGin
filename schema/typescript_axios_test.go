@@ -86,6 +86,17 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 				}},
 			},
 		},
+		{
+			Name:        "batch_upsert_resumes",
+			Method:      HTTPMethodPost,
+			Path:        "/person/resumes/batch-upsert",
+			RequestBody: []ResumeItem{{Company: "Beta", Title: "Lead", StartDate: "2024-01-01", EndDate: ""}},
+			Responses: []APIResponse{
+				{StatusCode: 200, Body: map[string]ResumeItem{
+					"latest": {Company: "Beta", Title: "Lead", StartDate: "2024-01-01", EndDate: ""},
+				}},
+			},
+		},
 	}
 
 	outPath := filepath.Join(".generated", "schema", "person_api.ts")
@@ -116,5 +127,18 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 	}
 	if !strings.Contains(code, "export const getPersonDetail") {
 		t.Fatalf("expected generated axios function")
+	}
+	if !strings.Contains(code, "export const getPersonResumesByRange = async (") ||
+		!strings.Contains(code, "requestBody?: GetPersonResumesByRangeRequest") ||
+		!strings.Contains(code, "Promise<ResumeItem[]>") {
+		t.Fatalf("expected response array type to be Promise<ResumeItem[]> without wrapper interface")
+	}
+	if !strings.Contains(code, "export const batchUpsertResumes = async (") ||
+		!strings.Contains(code, "requestBody?: ResumeItem[]") ||
+		!strings.Contains(code, "Promise<Record<string, ResumeItem>>") {
+		t.Fatalf("expected request array and response dictionary to use direct TS types")
+	}
+	if strings.Contains(code, "Promise<GetPersonResumesByRangeResponse200Body>") {
+		t.Fatalf("should not generate wrapper response interface for array response")
 	}
 }

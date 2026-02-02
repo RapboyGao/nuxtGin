@@ -393,7 +393,17 @@ func resolveModelType(registry *tsInterfaceRegistry, fallbackName string, value 
 	if v.IsValid() && v.Kind() == reflect.Struct && v.Type().Name() != "" && !(v.Type().PkgPath() == "time" && v.Type().Name() == "Time") {
 		return registry.ensureNamedStructType(v.Type())
 	}
-	return registry.ensureInterface(fallbackName, value)
+	if !v.IsValid() {
+		return registry.ensureInterface(fallbackName, map[string]any{})
+	}
+
+	// For top-level request/response array or dictionary, use direct TS types
+	// (e.g. ResumeItem[] / Record<string, ResumeItem>) instead of wrapper interfaces.
+	t, _, err := tsTypeFromValue(v, registry)
+	if err != nil {
+		return "", err
+	}
+	return t, nil
 }
 
 func schemaBaseName(s Schema, index int) string {
