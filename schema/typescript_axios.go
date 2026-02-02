@@ -17,21 +17,23 @@ type tsInterfaceDef struct {
 }
 
 type tsInterfaceRegistry struct {
-	defs      []tsInterfaceDef
-	sigToName map[string]string
-	nameCount map[string]int
+	defs       []tsInterfaceDef
+	sigToName  map[string]string
+	nameCount  map[string]int
+	typeToName map[reflect.Type]string
 }
 
 func newTSInterfaceRegistry() *tsInterfaceRegistry {
 	return &tsInterfaceRegistry{
-		defs:      make([]tsInterfaceDef, 0),
-		sigToName: map[string]string{},
-		nameCount: map[string]int{},
+		defs:       make([]tsInterfaceDef, 0),
+		sigToName:  map[string]string{},
+		nameCount:  map[string]int{},
+		typeToName: map[reflect.Type]string{},
 	}
 }
 
 func (r *tsInterfaceRegistry) ensureInterface(baseName string, value any) (string, error) {
-	body, sig, err := renderTopLevelInterface(value)
+	body, sig, err := renderTopLevelInterface(value, r)
 	if err != nil {
 		return "", err
 	}
@@ -54,6 +56,50 @@ func (r *tsInterfaceRegistry) ensureInterface(baseName string, value any) (strin
 		Sig:  sig,
 	})
 	r.sigToName[sig] = name
+	return name, nil
+}
+
+func (r *tsInterfaceRegistry) ensureNamedStructType(t reflect.Type) (string, error) {
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct || t.Name() == "" {
+		return "", fmt.Errorf("type %s is not a named struct", t.String())
+	}
+	if t.PkgPath() == "time" && t.Name() == "Time" {
+		return "string", nil
+	}
+	if existing, ok := r.typeToName[t]; ok {
+		return existing, nil
+	}
+
+	base := sanitizeTypeName(t.Name())
+	if base == "" {
+		base = "AnonymousType"
+	}
+	name := base
+	if count := r.nameCount[base]; count > 0 {
+		name = fmt.Sprintf("%s%d", base, count+1)
+	}
+	r.nameCount[base]++
+	r.typeToName[t] = name
+
+	body, sig, err := renderStructBodyByType(t, r)
+	if err != nil {
+		return "", err
+	}
+	namedSig := "named:" + t.PkgPath() + "." + t.Name() + ":" + sig
+	if existing, ok := r.sigToName[namedSig]; ok {
+		r.typeToName[t] = existing
+		return existing, nil
+	}
+
+	r.defs = append(r.defs, tsInterfaceDef{
+		Name: name,
+		Body: body,
+		Sig:  namedSig,
+	})
+	r.sigToName[namedSig] = name
 	return name, nil
 }
 
@@ -91,16 +137,24 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 		if requestShape == nil {
 			requestShape = map[string]any{}
 		}
-		requestType, err := registry.ensureInterface(base+"RequestBody", requestShape)
+		requestType, err := resolveModelType(registry, base+"RequestBody", requestShape)
 		if err != nil {
 			return "", fmt.Errorf("build request interface for schema[%d]: %w", i, err)
+		}
+		for j := range s.Responses {
+			if s.Responses[j].Body == nil {
+				continue
+			}
+			if _, err := resolveModelType(registry, fmt.Sprintf("%sResponse%dBody", base, s.Responses[j].StatusCode), s.Responses[j].Body); err != nil {
+				return "", fmt.Errorf("build response[%d] interface for schema[%d]: %w", j, i, err)
+			}
 		}
 
 		responseShape := inferPrimaryResponseBody(s)
 		if responseShape == nil {
 			responseShape = map[string]any{}
 		}
-		responseType, err := registry.ensureInterface(base+"ResponseBody", responseShape)
+		responseType, err := resolveModelType(registry, base+"ResponseBody", responseShape)
 		if err != nil {
 			return "", fmt.Errorf("build response interface for schema[%d]: %w", i, err)
 		}
@@ -328,6 +382,20 @@ func buildTSURLExpr(path string) string {
 	return "`" + template + "`"
 }
 
+func resolveModelType(registry *tsInterfaceRegistry, fallbackName string, value any) (string, error) {
+	v := reflect.ValueOf(value)
+	for v.IsValid() && (v.Kind() == reflect.Interface || v.Kind() == reflect.Ptr) {
+		if v.IsNil() {
+			break
+		}
+		v = v.Elem()
+	}
+	if v.IsValid() && v.Kind() == reflect.Struct && v.Type().Name() != "" && !(v.Type().PkgPath() == "time" && v.Type().Name() == "Time") {
+		return registry.ensureNamedStructType(v.Type())
+	}
+	return registry.ensureInterface(fallbackName, value)
+}
+
 func schemaBaseName(s Schema, index int) string {
 	if n := strings.TrimSpace(s.Name); n != "" {
 		return toUpperCamel(n)
@@ -365,7 +433,7 @@ func toUpperCamel(s string) string {
 			continue
 		}
 		b.WriteString(strings.ToUpper(p[:1]))
-		b.WriteString(strings.ToLower(p[1:]))
+		b.WriteString(p[1:])
 	}
 	out := b.String()
 	if out == "" {
@@ -385,7 +453,7 @@ func toLowerCamel(s string) string {
 	return strings.ToLower(u[:1]) + u[1:]
 }
 
-func renderTopLevelInterface(value any) (string, string, error) {
+func renderTopLevelInterface(value any, registry *tsInterfaceRegistry) (string, string, error) {
 	v := reflect.ValueOf(value)
 	for v.IsValid() && (v.Kind() == reflect.Interface || v.Kind() == reflect.Ptr) {
 		if v.IsNil() {
@@ -399,13 +467,13 @@ func renderTopLevelInterface(value any) (string, string, error) {
 
 	switch v.Kind() {
 	case reflect.Struct:
-		body, sig, err := renderStructBody(v)
+		body, sig, err := renderStructBody(v, registry)
 		return body, "struct:" + sig, err
 	case reflect.Map:
-		body, sig, err := renderMapBody(v)
+		body, sig, err := renderMapBody(v, registry)
 		return body, "map:" + sig, err
 	default:
-		t, sig, err := tsTypeFromValue(v)
+		t, sig, err := tsTypeFromValue(v, registry)
 		if err != nil {
 			return "", "", err
 		}
@@ -413,8 +481,11 @@ func renderTopLevelInterface(value any) (string, string, error) {
 	}
 }
 
-func renderStructBody(v reflect.Value) (string, string, error) {
-	t := v.Type()
+func renderStructBody(v reflect.Value, registry *tsInterfaceRegistry) (string, string, error) {
+	return renderStructBodyByType(v.Type(), registry)
+}
+
+func renderStructBodyByType(t reflect.Type, registry *tsInterfaceRegistry) (string, string, error) {
 	lines := make([]string, 0, t.NumField())
 	sigs := make([]string, 0, t.NumField())
 	for i := 0; i < t.NumField(); i++ {
@@ -427,7 +498,7 @@ func renderStructBody(v reflect.Value) (string, string, error) {
 			continue
 		}
 
-		fieldType, fieldSig, err := tsTypeFromValue(v.Field(i))
+		fieldType, fieldSig, err := tsTypeFromType(f.Type, registry)
 		if err != nil {
 			return "", "", err
 		}
@@ -438,7 +509,7 @@ func renderStructBody(v reflect.Value) (string, string, error) {
 	return strings.Join(lines, ""), "{" + strings.Join(sigs, ";") + "}", nil
 }
 
-func renderMapBody(v reflect.Value) (string, string, error) {
+func renderMapBody(v reflect.Value, registry *tsInterfaceRegistry) (string, string, error) {
 	if v.Type().Key().Kind() != reflect.String {
 		return "  [key: string]: unknown;\n", "{[key:string]:unknown}", nil
 	}
@@ -459,7 +530,7 @@ func renderMapBody(v reflect.Value) (string, string, error) {
 	var lines strings.Builder
 	sigs := make([]string, 0, len(names))
 	for _, name := range names {
-		fieldType, fieldSig, err := tsTypeFromValue(keyToVal[name])
+		fieldType, fieldSig, err := tsTypeFromValue(keyToVal[name], registry)
 		if err != nil {
 			return "", "", err
 		}
@@ -473,7 +544,7 @@ func renderMapBody(v reflect.Value) (string, string, error) {
 	return lines.String(), "{" + strings.Join(sigs, ";") + "}", nil
 }
 
-func tsTypeFromValue(v reflect.Value) (string, string, error) {
+func tsTypeFromValue(v reflect.Value, registry *tsInterfaceRegistry) (string, string, error) {
 	for v.IsValid() && (v.Kind() == reflect.Interface || v.Kind() == reflect.Ptr) {
 		if v.IsNil() {
 			return "null", "null", nil
@@ -483,13 +554,30 @@ func tsTypeFromValue(v reflect.Value) (string, string, error) {
 	if !v.IsValid() {
 		return "unknown", "unknown", nil
 	}
+	if v.Kind() == reflect.Map &&
+		v.Type().Key().Kind() == reflect.String &&
+		v.Type().Elem().Kind() == reflect.Interface &&
+		v.Len() > 0 {
+		body, sig, err := renderMapBody(v, registry)
+		if err != nil {
+			return "", "", err
+		}
+		return "{\n" + body + "}", "map" + sig, nil
+	}
 
-	t := v.Type()
+	return tsTypeFromType(v.Type(), registry)
+}
+
+func tsTypeFromType(t reflect.Type, registry *tsInterfaceRegistry) (string, string, error) {
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
 	if t.PkgPath() == "time" && t.Name() == "Time" {
 		return "string", "string", nil
 	}
 
-	switch v.Kind() {
+	switch t.Kind() {
 	case reflect.Bool:
 		return "boolean", "boolean", nil
 	case reflect.String:
@@ -499,7 +587,14 @@ func tsTypeFromValue(v reflect.Value) (string, string, error) {
 		reflect.Float32, reflect.Float64:
 		return "number", "number", nil
 	case reflect.Struct:
-		body, sig, err := renderStructBody(v)
+		if t.Name() != "" {
+			name, err := registry.ensureNamedStructType(t)
+			if err != nil {
+				return "", "", err
+			}
+			return name, "named:" + t.PkgPath() + "." + t.Name(), nil
+		}
+		body, sig, err := renderStructBodyByType(t, registry)
 		if err != nil {
 			return "", "", err
 		}
@@ -508,41 +603,19 @@ func tsTypeFromValue(v reflect.Value) (string, string, error) {
 		if t.Key().Kind() != reflect.String {
 			return "Record<string, unknown>", "record_unknown", nil
 		}
-		if v.Len() == 0 {
-			return "Record<string, unknown>", "record_empty", nil
-		}
-		body, sig, err := renderMapBody(v)
+		elemType, elemSig, err := tsTypeFromType(t.Elem(), registry)
 		if err != nil {
 			return "", "", err
 		}
-		return "{\n" + body + "}", "map" + sig, nil
+		return "Record<string, " + elemType + ">", "record[" + elemSig + "]", nil
 	case reflect.Slice, reflect.Array:
-		if v.Len() == 0 {
-			return "unknown[]", "arr_unknown", nil
+		elemType, elemSig, err := tsTypeFromType(t.Elem(), registry)
+		if err != nil {
+			return "", "", err
 		}
-		typeSet := map[string]string{}
-		for i := 0; i < v.Len(); i++ {
-			itemType, itemSig, err := tsTypeFromValue(v.Index(i))
-			if err != nil {
-				return "", "", err
-			}
-			typeSet[itemSig] = itemType
-		}
-		sigs := make([]string, 0, len(typeSet))
-		for sig := range typeSet {
-			sigs = append(sigs, sig)
-		}
-		sort.Strings(sigs)
-
-		types := make([]string, 0, len(sigs))
-		for _, sig := range sigs {
-			types = append(types, typeSet[sig])
-		}
-		elem := strings.Join(types, " | ")
-		if len(types) > 1 {
-			elem = "(" + elem + ")"
-		}
-		return elem + "[]", "arr[" + strings.Join(sigs, "|") + "]", nil
+		return elemType + "[]", "arr[" + elemSig + "]", nil
+	case reflect.Interface:
+		return "unknown", "unknown", nil
 	default:
 		return "unknown", "unknown", nil
 	}

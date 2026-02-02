@@ -111,12 +111,20 @@ func TestGenerateAxiosFromSchemas_DeduplicateInterfaces(t *testing.T) {
 		t.Fatalf("expected generated code to include basePath")
 	}
 
-	if strings.Count(code, "export interface ") != 3 {
-		t.Fatalf("expected exactly 3 interfaces (params/request/response) after dedup, got %d", strings.Count(code, "export interface "))
+	if strings.Contains(code, "export interface GetUserCopyParams") {
+		t.Fatalf("expected duplicate params interface not to be generated")
 	}
 
-	if !strings.Contains(code, "export const getusercopy = async (params: Getuserparams = {}, requestBody?: Getuserrequestbody): Promise<Getuserresponsebody> => {") {
+	if !strings.Contains(code, "export const getUserCopy = async (params: GetUserParams = {}, requestBody?: RequestModel): Promise<SuccessResponseModel> => {") {
 		t.Fatalf("expected getUserCopy to reuse deduplicated interfaces")
+	}
+	if !strings.Contains(code, "export interface QueryRange") ||
+		!strings.Contains(code, "export interface QueryModel") ||
+		!strings.Contains(code, "export interface RequestProfile") ||
+		!strings.Contains(code, "export interface RequestModel") ||
+		!strings.Contains(code, "export interface ResponseItem") ||
+		!strings.Contains(code, "export interface SuccessResponseModel") {
+		t.Fatalf("expected all named Go structs to be generated as TypeScript interfaces")
 	}
 }
 
@@ -168,8 +176,11 @@ func TestGenerateAxiosFromSchemas_UsesStructAndCompositeTypes(t *testing.T) {
 	if !strings.Contains(code, "ok: boolean;") {
 		t.Fatalf("expected response interface to use first 2xx response body")
 	}
-	if strings.Contains(code, "errorCode: string;") {
-		t.Fatalf("expected non-2xx response body not to be selected as primary response")
+	if !strings.Contains(code, "Promise<SuccessResponseModel>") {
+		t.Fatalf("expected first 2xx response body to be used as primary response type")
+	}
+	if !strings.Contains(code, "export interface ErrorResponseModel") {
+		t.Fatalf("expected non-2xx response struct to still be generated as interface")
 	}
 	if !strings.Contains(code, "tags: string[];") {
 		t.Fatalf("expected query struct to generate slice type")
@@ -186,13 +197,16 @@ func TestGenerateAxiosFromSchemas_UsesStructAndCompositeTypes(t *testing.T) {
 }
 
 func TestExportAxiosFromSchemasToTSFile(t *testing.T) {
-	tmp := t.TempDir()
 	oldWD, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd failed: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldWD) })
-	if err := os.Chdir(tmp); err != nil {
+	root, err := findModuleRoot(oldWD)
+	if err != nil {
+		t.Fatalf("findModuleRoot failed: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
 		t.Fatalf("chdir failed: %v", err)
 	}
 
@@ -209,12 +223,12 @@ func TestExportAxiosFromSchemasToTSFile(t *testing.T) {
 		},
 	}
 
-	outPath := filepath.Join("generated", "api.ts")
+	outPath := filepath.Join(".generated", "schema", "api.ts")
 	if err := ExportAxiosFromSchemasToTSFile("/api", schemas, outPath); err != nil {
 		t.Fatalf("ExportAxiosFromSchemasToTSFile returned error: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmp, outPath))
+	data, err := os.ReadFile(filepath.Join(root, outPath))
 	if err != nil {
 		t.Fatalf("read generated file failed: %v", err)
 	}
@@ -224,5 +238,19 @@ func TestExportAxiosFromSchemasToTSFile(t *testing.T) {
 	}
 	if !strings.Contains(code, "const basePath = '/api';") {
 		t.Fatalf("expected basePath in generated ts file")
+	}
+}
+
+func findModuleRoot(start string) (string, error) {
+	dir := start
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+		next := filepath.Dir(dir)
+		if next == dir {
+			return "", os.ErrNotExist
+		}
+		dir = next
 	}
 }
