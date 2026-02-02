@@ -225,14 +225,10 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 	for _, m := range metas {
 		args := make([]string, 0, 2)
 		if m.HasParams {
-			args = append(args, "params: "+m.ParamsType+" = {}")
+			args = append(args, "params: "+m.ParamsType)
 		}
 		if m.HasReqBody {
-			reqArg := "requestBody?: " + m.RequestType
-			if m.RequestRequired {
-				reqArg = "requestBody: " + m.RequestType
-			}
-			args = append(args, reqArg)
+			args = append(args, "requestBody: "+m.RequestType)
 		}
 
 		b.WriteString("export async function ")
@@ -549,7 +545,11 @@ func renderStructBodyByType(t reflect.Type, registry *tsInterfaceRegistry) (stri
 		if err != nil {
 			return "", "", err
 		}
-		lines = append(lines, fmt.Sprintf("  %s: %s;\n", tsPropName(name), fieldType))
+		separator := ";"
+		if isMultilineObjectType(fieldType) {
+			separator = ","
+		}
+		lines = append(lines, fmt.Sprintf("  %s: %s%s\n", tsPropName(name), fieldType, separator))
 		sigs = append(sigs, name+":"+fieldSig)
 	}
 	sort.Strings(sigs)
@@ -585,10 +585,18 @@ func renderMapBody(v reflect.Value, registry *tsInterfaceRegistry) (string, stri
 		lines.WriteString(tsPropName(name))
 		lines.WriteString(": ")
 		lines.WriteString(fieldType)
-		lines.WriteString(";\n")
+		if isMultilineObjectType(fieldType) {
+			lines.WriteString(",\n")
+		} else {
+			lines.WriteString(";\n")
+		}
 		sigs = append(sigs, name+":"+fieldSig)
 	}
 	return lines.String(), "{" + strings.Join(sigs, ";") + "}", nil
+}
+
+func isMultilineObjectType(tsType string) bool {
+	return strings.HasPrefix(tsType, "{\n") && strings.HasSuffix(tsType, "}")
 }
 
 func tsTypeFromValue(v reflect.Value, registry *tsInterfaceRegistry) (string, string, error) {

@@ -130,16 +130,16 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 		strings.Contains(code, "export interface GetPersonByIdParams") {
 		t.Fatalf("expected no params interfaces when params are not defined")
 	}
-	if !strings.Contains(code, "export async function getPersonDetail(requestBody?: GetPersonRequest): Promise<PersonDetailResponse> {") {
+	if !strings.Contains(code, "export async function getPersonDetail(requestBody: GetPersonRequest): Promise<PersonDetailResponse> {") {
 		t.Fatalf("expected getPersonDetail function to have only requestBody argument")
 	}
 	if !strings.Contains(code, "export async function getPersonResumesByRange(") ||
-		!strings.Contains(code, "requestBody?: GetPersonResumesByRangeRequest") ||
+		!strings.Contains(code, "requestBody: GetPersonResumesByRangeRequest") ||
 		!strings.Contains(code, "Promise<ResumeItem[]>") {
 		t.Fatalf("expected response array type to be Promise<ResumeItem[]> without wrapper interface")
 	}
 	if !strings.Contains(code, "export async function batchUpsertResumes(") ||
-		!strings.Contains(code, "requestBody?: ResumeItem[]") ||
+		!strings.Contains(code, "requestBody: ResumeItem[]") ||
 		!strings.Contains(code, "Promise<Record<string, ResumeItem>>") {
 		t.Fatalf("expected request array and response dictionary to use direct TS types")
 	}
@@ -151,6 +151,9 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 	}
 	if !strings.Contains(code, "export async function getPersonById(params: {") {
 		t.Fatalf("expected map-based params to be inlined in function signature")
+	}
+	if strings.Contains(code, "} = {}): Promise<PersonDetailResponse>") {
+		t.Fatalf("expected getPersonById params to be required when path params exist")
 	}
 }
 
@@ -173,10 +176,6 @@ func TestGenerateAxiosFromSchemas_ValidationError(t *testing.T) {
 	}
 
 	_, err := GenerateAxiosFromSchemas("/api/v1", schemas)
-	outPath := filepath.Join(".generated", "schema", "invalid_params_api.ts")
-	if err := ExportAxiosFromSchemasToTSFile("/api/v1", schemas, outPath); err != nil {
-		t.Fatalf("ExportAxiosFromSchemasToTSFile returned error: %v", err)
-	}
 	if err == nil {
 		t.Fatalf("expected validation error when path/query params mismatch with path")
 	}
