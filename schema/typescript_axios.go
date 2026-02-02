@@ -2,6 +2,8 @@ package schema
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
@@ -72,7 +74,7 @@ type axiosFuncMeta struct {
 // GenerateAxiosFromSchemas converts schemas into TypeScript axios client code.
 // It also generates export interfaces for Params / RequestBody / ResponseBody,
 // and deduplicates identical interface shapes globally.
-func GenerateAxiosFromSchemas(basePath string, schemas []Schema) (string, error) {
+func GenerateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) {
 	registry := newTSInterfaceRegistry()
 	metas := make([]axiosFuncMeta, 0, len(schemas))
 
@@ -121,7 +123,7 @@ func GenerateAxiosFromSchemas(basePath string, schemas []Schema) (string, error)
 	var b strings.Builder
 	b.WriteString("import axios from 'axios';\n\n")
 	b.WriteString("const basePath = '")
-	b.WriteString(tsSingleQuoteString(basePath))
+	b.WriteString(tsSingleQuoteString(baseURL))
 	b.WriteString("';\n")
 	b.WriteString("const joinBasePath = (base: string, path: string): string => {\n")
 	b.WriteString("  if (!base) return path;\n")
@@ -207,6 +209,32 @@ func GenerateAxiosFromSchemas(basePath string, schemas []Schema) (string, error)
 	}
 
 	return strings.TrimSpace(b.String()) + "\n", nil
+}
+
+// ExportAxiosFromSchemasToTSFile generates axios TypeScript code and writes it to
+// a .ts file path that must be relative to the current working directory.
+func ExportAxiosFromSchemasToTSFile(baseURL string, schemas []Schema, relativeTSPath string) error {
+	if strings.TrimSpace(relativeTSPath) == "" {
+		return fmt.Errorf("relative ts path is required")
+	}
+	if filepath.IsAbs(relativeTSPath) {
+		return fmt.Errorf("ts file path must be relative to cwd")
+	}
+
+	code, err := GenerateAxiosFromSchemas(baseURL, schemas)
+	if err != nil {
+		return err
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	fullPath := filepath.Clean(filepath.Join(cwd, relativeTSPath))
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(fullPath, []byte(code), 0o644)
 }
 
 func tsSingleQuoteString(s string) string {

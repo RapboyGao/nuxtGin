@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -180,5 +182,47 @@ func TestGenerateAxiosFromSchemas_UsesStructAndCompositeTypes(t *testing.T) {
 	}
 	if !strings.Contains(code, "ratios: number[];") {
 		t.Fatalf("expected response body struct to generate array type")
+	}
+}
+
+func TestExportAxiosFromSchemasToTSFile(t *testing.T) {
+	tmp := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd failed: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir failed: %v", err)
+	}
+
+	schemas := []Schema{
+		{
+			Name:   "ping",
+			Method: HTTPMethodGet,
+			Path:   "/ping",
+			Responses: []APIResponse{
+				{StatusCode: 200, Body: struct {
+					Message string `json:"message"`
+				}{Message: "pong"}},
+			},
+		},
+	}
+
+	outPath := filepath.Join("generated", "api.ts")
+	if err := ExportAxiosFromSchemasToTSFile("/api", schemas, outPath); err != nil {
+		t.Fatalf("ExportAxiosFromSchemasToTSFile returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmp, outPath))
+	if err != nil {
+		t.Fatalf("read generated file failed: %v", err)
+	}
+	code := string(data)
+	if !strings.Contains(code, "import axios from 'axios';") {
+		t.Fatalf("expected generated ts file content")
+	}
+	if !strings.Contains(code, "const basePath = '/api';") {
+		t.Fatalf("expected basePath in generated ts file")
 	}
 }
