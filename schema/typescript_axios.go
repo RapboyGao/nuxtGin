@@ -110,6 +110,10 @@ type axiosFuncMeta struct {
 	ParamsType      string
 	RequestType     string
 	ResponseType    string
+	APIDescription  string
+	RequestDesc     string
+	ResponseDesc    string
+	ResponseStatus  int
 	HasParams       bool
 	HasPath         bool
 	HasQuery        bool
@@ -161,6 +165,7 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 		}
 
 		responseShape := inferPrimaryResponseBody(s)
+		primaryResp := inferPrimaryResponse(s)
 		responseType := "void"
 		if responseShape != nil {
 			responseType, err = resolveModelType(registry, base+"ResponseBody", responseShape)
@@ -176,6 +181,8 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 			ParamsType:      paramsType,
 			RequestType:     requestType,
 			ResponseType:    responseType,
+			APIDescription:  strings.TrimSpace(s.Description),
+			RequestDesc:     strings.TrimSpace(s.RequestDescription),
 			HasParams:       hasParams,
 			HasPath:         hasPath,
 			HasQuery:        hasQuery,
@@ -184,6 +191,10 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 			HasReqBody:      hasReqBody,
 			RequestRequired: s.RequestRequired,
 		})
+		if primaryResp != nil {
+			metas[len(metas)-1].ResponseDesc = strings.TrimSpace(primaryResp.Description)
+			metas[len(metas)-1].ResponseStatus = primaryResp.StatusCode
+		}
 	}
 
 	var b strings.Builder
@@ -254,6 +265,30 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 	}
 
 	for _, m := range metas {
+		if m.APIDescription != "" || m.RequestDesc != "" || m.ResponseDesc != "" {
+			b.WriteString("/**\n")
+			if m.APIDescription != "" {
+				b.WriteString(" * ")
+				b.WriteString(escapeTSComment(m.APIDescription))
+				b.WriteString("\n")
+			}
+			if m.RequestDesc != "" {
+				b.WriteString(" * @request ")
+				b.WriteString(escapeTSComment(m.RequestDesc))
+				b.WriteString("\n")
+			}
+			if m.ResponseDesc != "" {
+				b.WriteString(" * @response")
+				if m.ResponseStatus > 0 {
+					b.WriteString(" ")
+					b.WriteString(fmt.Sprintf("%d", m.ResponseStatus))
+				}
+				b.WriteString(" ")
+				b.WriteString(escapeTSComment(m.ResponseDesc))
+				b.WriteString("\n")
+			}
+			b.WriteString(" */\n")
+		}
 		args := make([]string, 0, 3)
 		if m.HasParams {
 			args = append(args, "params: "+m.ParamsType)
@@ -401,6 +436,14 @@ func buildParamsShape(s Schema) (map[string]any, bool, bool, bool, bool) {
 }
 
 func inferPrimaryResponseBody(s Schema) any {
+	primary := inferPrimaryResponse(s)
+	if primary == nil {
+		return nil
+	}
+	return primary.Body
+}
+
+func inferPrimaryResponse(s Schema) *APIResponse {
 	if len(s.Responses) == 0 {
 		return nil
 	}
@@ -409,10 +452,10 @@ func inferPrimaryResponseBody(s Schema) any {
 	for i := range s.Responses {
 		code := s.Responses[i].StatusCode
 		if code >= 200 && code < 300 {
-			return s.Responses[i].Body
+			return &s.Responses[i]
 		}
 	}
-	return s.Responses[0].Body
+	return &s.Responses[0]
 }
 
 func cloneAnyMap(m map[string]any) map[string]any {
@@ -783,4 +826,8 @@ func tsPropName(name string) string {
 		return name
 	}
 	return `"` + strings.ReplaceAll(name, `"`, `\"`) + `"`
+}
+
+func escapeTSComment(s string) string {
+	return strings.ReplaceAll(s, "*/", "* /")
 }

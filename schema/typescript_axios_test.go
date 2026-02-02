@@ -60,12 +60,14 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 
 	schemas := []Schema{
 		{
-			Name:        "get_person_detail",
-			Method:      HTTPMethodPost,
-			Path:        "/person/detail",
-			RequestBody: GetPersonRequest{},
+			Name:               "get_person_detail",
+			Method:             HTTPMethodPost,
+			Path:               "/person/detail",
+			Description:        "Get detail of one person.",
+			RequestDescription: "Request by personID.",
+			RequestBody:        GetPersonRequest{},
 			Responses: []APIResponse{
-				{StatusCode: 200, Body: PersonDetailResponse{}},
+				{StatusCode: 200, Description: "Person detail payload.", Body: PersonDetailResponse{}},
 			},
 		},
 		{
@@ -142,6 +144,12 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 	}
 	if !strings.Contains(code, "export async function getPersonDetail") {
 		t.Fatalf("expected generated axios function")
+	}
+	if !strings.Contains(code, "/**") ||
+		!strings.Contains(code, "Get detail of one person.") ||
+		!strings.Contains(code, "@request Request by personID.") ||
+		!strings.Contains(code, "@response 200 Person detail payload.") {
+		t.Fatalf("expected generated function docs from schema descriptions")
 	}
 	if strings.Contains(code, "export interface GetPersonDetailParams") ||
 		strings.Contains(code, "export interface GetPersonResumesByRangeParams") ||

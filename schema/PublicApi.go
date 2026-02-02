@@ -64,6 +64,9 @@ type Schema struct {
 	// Path is the route template (supports :id and {id} placeholders).
 	// Path 是路由模板（支持 :id 和 {id} 占位符）。
 	Path string `json:"path"`
+	// Description is the API-level description used for docs/comments generation.
+	// Description 是接口级说明，可用于文档与生成代码注释。
+	Description string `json:"description,omitempty"`
 	// Parameters grouped by location.
 	// 按位置分组的参数定义。
 	PathParams   map[string]any `json:"pathParams,omitempty"`
@@ -75,6 +78,9 @@ type Schema struct {
 	// 请求元信息与请求体定义。
 	RequestRequired bool `json:"requestRequired,omitempty"`
 	RequestBody     any  `json:"requestBody,omitempty"`
+	// RequestDescription is the request-level description.
+	// RequestDescription 是请求级说明。
+	RequestDescription string `json:"requestDescription,omitempty"`
 
 	// Unified response definitions.
 	// 统一响应定义（建议至少提供一个 2xx 响应作为成功响应）。
@@ -98,6 +104,9 @@ type APIResponse struct {
 	// Body is the response payload schema/example object.
 	// Body 为响应体结构/示例对象。
 	Body any `json:"body,omitempty"`
+	// Description is the response-level description used for docs/comments generation.
+	// Description 是响应级说明，可用于文档与生成代码注释。
+	Description string `json:"description,omitempty"`
 }
 
 // RegisterToGin validates the Schema and registers it into a gin.IRouter.
