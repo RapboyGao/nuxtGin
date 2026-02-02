@@ -149,3 +149,30 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 		t.Fatalf("expected :id path param replacement in generated url")
 	}
 }
+
+func TestGenerateAxiosFromSchemas_ValidationError(t *testing.T) {
+	schemas := []Schema{
+		{
+			Name:   "invalid_params",
+			Method: HTTPMethodGet,
+			Path:   "/person/:id",
+			PathParams: map[string]any{
+				"personID": "p-1",
+			},
+			QueryParams: map[string]any{
+				"id": "p-1",
+			},
+			Responses: []APIResponse{
+				{StatusCode: 200, Body: PersonDetailResponse{}},
+			},
+		},
+	}
+
+	_, err := GenerateAxiosFromSchemas("/api/v1", schemas)
+	if err == nil {
+		t.Fatalf("expected validation error when path/query params mismatch with path")
+	}
+	if !strings.Contains(err.Error(), "validation failed") {
+		t.Fatalf("expected validation error message, got: %v", err)
+	}
+}

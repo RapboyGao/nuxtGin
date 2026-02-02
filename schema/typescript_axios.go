@@ -128,6 +128,9 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 
 	for i, s := range schemas {
 		var err error
+		if err := validateSchemaForAxios(s); err != nil {
+			return "", fmt.Errorf("schema[%d] validation failed: %w", i, err)
+		}
 		base := schemaBaseName(s, i)
 
 		paramsShape, hasPath, hasQuery, hasHeader, hasCookie := buildParamsShape(s)
@@ -277,6 +280,26 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 	}
 
 	return strings.TrimSpace(b.String()) + "\n", nil
+}
+
+func validateSchemaForAxios(s Schema) error {
+	pathParamNames := extractPathParams(s.Path)
+	pathParamSet := make(map[string]struct{}, len(pathParamNames))
+	for _, n := range pathParamNames {
+		pathParamSet[n] = struct{}{}
+	}
+
+	for key := range s.PathParams {
+		if _, ok := pathParamSet[key]; !ok {
+			return fmt.Errorf("path param %q not found in path %q", key, s.Path)
+		}
+	}
+	for key := range s.QueryParams {
+		if _, ok := pathParamSet[key]; ok {
+			return fmt.Errorf("query param %q conflicts with path param in path %q", key, s.Path)
+		}
+	}
+	return nil
 }
 
 // exportAxiosFromSchemasToTSFile generates axios TypeScript code and writes it to
