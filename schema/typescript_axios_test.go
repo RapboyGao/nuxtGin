@@ -25,6 +25,12 @@ type PersonDetailResponse struct {
 	Resumes  []ResumeItem `json:"resumes"`
 }
 
+type GetPersonResumesByRangeRequest struct {
+	PersonID  string `json:"personID"`
+	StartTime string `json:"startTime"`
+	EndTime   string `json:"endTime"`
+}
+
 func TestGenerateAndExportAxiosTS(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -65,6 +71,21 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 				}},
 			},
 		},
+		{
+			Name:   "get_person_resumes_by_range",
+			Method: HTTPMethodPost,
+			Path:   "/person/resumes/range",
+			RequestBody: GetPersonResumesByRangeRequest{
+				PersonID:  "p-1001",
+				StartTime: "2021-01-01",
+				EndTime:   "2024-01-01",
+			},
+			Responses: []APIResponse{
+				{StatusCode: 200, Body: []ResumeItem{
+					{Company: "ACME", Title: "Engineer", StartDate: "2021-01-01", EndDate: "2023-12-31"},
+				}},
+			},
+		},
 	}
 
 	outPath := filepath.Join(".generated", "schema", "person_api.ts")
@@ -83,6 +104,9 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 	}
 	if !strings.Contains(code, "export interface ResumeItem") {
 		t.Fatalf("expected ResumeItem interface")
+	}
+	if strings.Count(code, "export interface ResumeItem") != 1 {
+		t.Fatalf("expected ResumeItem interface to be generated once, got %d", strings.Count(code, "export interface ResumeItem"))
 	}
 	if !strings.Contains(code, "export interface PersonDetailResponse") {
 		t.Fatalf("expected PersonDetailResponse interface")
