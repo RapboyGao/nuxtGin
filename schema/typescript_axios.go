@@ -56,17 +56,17 @@ func (r *tsInterfaceRegistry) ensureInterface(baseName string, value any) (strin
 }
 
 type axiosFuncMeta struct {
-	FuncName    string
-	Method      string
-	Path        string
-	ParamsType  string
-	RequestType string
+	FuncName     string
+	Method       string
+	Path         string
+	ParamsType   string
+	RequestType  string
 	ResponseType string
-	HasPath     bool
-	HasQuery    bool
-	HasHeader   bool
-	HasCookie   bool
-	HasReqBody  bool
+	HasPath      bool
+	HasQuery     bool
+	HasHeader    bool
+	HasCookie    bool
+	HasReqBody   bool
 }
 
 // GenerateAxiosFromSchemas converts schemas into TypeScript axios client code.
@@ -94,7 +94,7 @@ func GenerateAxiosFromSchemas(schemas []Schema) (string, error) {
 			return "", fmt.Errorf("build request interface for schema[%d]: %w", i, err)
 		}
 
-		responseShape := s.ResponseBody
+		responseShape := inferPrimaryResponseBody(s)
 		if responseShape == nil {
 			responseShape = map[string]any{}
 		}
@@ -223,6 +223,21 @@ func buildParamsShape(s Schema) (map[string]any, bool, bool, bool, bool) {
 	}
 
 	return params, len(pathParams) > 0, len(s.QueryParams) > 0, len(s.HeaderParams) > 0, len(s.CookieParams) > 0
+}
+
+func inferPrimaryResponseBody(s Schema) any {
+	if len(s.Responses) == 0 {
+		return nil
+	}
+
+	// Prefer the first 2xx response as the primary axios return type.
+	for i := range s.Responses {
+		code := s.Responses[i].StatusCode
+		if code >= 200 && code < 300 {
+			return s.Responses[i].Body
+		}
+	}
+	return s.Responses[0].Body
 }
 
 func cloneAnyMap(m map[string]any) map[string]any {
@@ -513,4 +528,3 @@ func tsPropName(name string) string {
 	}
 	return `"` + strings.ReplaceAll(name, `"`, `\"`) + `"`
 }
-

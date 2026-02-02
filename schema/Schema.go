@@ -53,21 +53,24 @@ type Schema struct {
 	RequestBody        any    `json:"requestBody,omitempty"`
 	RequestExample     any    `json:"requestExample,omitempty"`
 
-	// Primary response.
-	ResponseCode        int            `json:"responseCode"`
-	ResponseContentType string         `json:"responseContentType,omitempty"`
-	ResponseHeaders     map[string]any `json:"responseHeaders,omitempty"`
-	ResponseBody        any            `json:"responseBody,omitempty"`
-	ResponseExample     any            `json:"responseExample,omitempty"`
-
-	// Extra responses keyed by status code, such as "400", "401", "500".
-	Responses map[string]any `json:"responses,omitempty"`
+	// Unified response definitions.
+	Responses []APIResponse `json:"responses,omitempty"`
 
 	// Security schemes and scopes, e.g. [{"bearerAuth":[]}] .
 	Security []map[string][]string `json:"security,omitempty"`
 
 	// GinHandler is the runtime gin handler for this API endpoint.
 	GinHandler gin.HandlerFunc `json:"-"`
+}
+
+// APIResponse describes one response item for an API schema.
+type APIResponse struct {
+	StatusCode  int            `json:"statusCode"`
+	Description string         `json:"description,omitempty"`
+	ContentType string         `json:"contentType,omitempty"`
+	Headers     map[string]any `json:"headers,omitempty"`
+	Body        any            `json:"body,omitempty"`
+	Example     any            `json:"example,omitempty"`
 }
 
 // RegisterToGin registers this API endpoint to a gin router.
