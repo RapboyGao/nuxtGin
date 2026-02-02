@@ -104,17 +104,19 @@ func (r *tsInterfaceRegistry) ensureNamedStructType(t reflect.Type) (string, err
 }
 
 type axiosFuncMeta struct {
-	FuncName     string
-	Method       string
-	Path         string
-	ParamsType   string
-	RequestType  string
-	ResponseType string
-	HasPath      bool
-	HasQuery     bool
-	HasHeader    bool
-	HasCookie    bool
-	HasReqBody   bool
+	FuncName        string
+	Method          string
+	Path            string
+	ParamsType      string
+	RequestType     string
+	ResponseType    string
+	HasParams       bool
+	HasPath         bool
+	HasQuery        bool
+	HasHeader       bool
+	HasCookie       bool
+	HasReqBody      bool
+	RequestRequired bool
 }
 
 // generateAxiosFromSchemas converts schemas into TypeScript axios client code.
@@ -125,21 +127,26 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 	metas := make([]axiosFuncMeta, 0, len(schemas))
 
 	for i, s := range schemas {
+		var err error
 		base := schemaBaseName(s, i)
 
 		paramsShape, hasPath, hasQuery, hasHeader, hasCookie := buildParamsShape(s)
-		paramsType, err := registry.ensureInterface(base+"Params", paramsShape)
-		if err != nil {
-			return "", fmt.Errorf("build params interface for schema[%d]: %w", i, err)
+		hasParams := hasPath || hasQuery || hasHeader || hasCookie
+		paramsType := ""
+		if hasParams {
+			paramsType, err = registry.ensureInterface(base+"Params", paramsShape)
+			if err != nil {
+				return "", fmt.Errorf("build params interface for schema[%d]: %w", i, err)
+			}
 		}
 
-		requestShape := s.RequestBody
-		if requestShape == nil {
-			requestShape = map[string]any{}
-		}
-		requestType, err := resolveModelType(registry, base+"RequestBody", requestShape)
-		if err != nil {
-			return "", fmt.Errorf("build request interface for schema[%d]: %w", i, err)
+		hasReqBody := s.RequestBody != nil
+		requestType := ""
+		if hasReqBody {
+			requestType, err = resolveModelType(registry, base+"RequestBody", s.RequestBody)
+			if err != nil {
+				return "", fmt.Errorf("build request interface for schema[%d]: %w", i, err)
+			}
 		}
 		for j := range s.Responses {
 			if s.Responses[j].Body == nil {
@@ -151,26 +158,28 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 		}
 
 		responseShape := inferPrimaryResponseBody(s)
-		if responseShape == nil {
-			responseShape = map[string]any{}
-		}
-		responseType, err := resolveModelType(registry, base+"ResponseBody", responseShape)
-		if err != nil {
-			return "", fmt.Errorf("build response interface for schema[%d]: %w", i, err)
+		responseType := "void"
+		if responseShape != nil {
+			responseType, err = resolveModelType(registry, base+"ResponseBody", responseShape)
+			if err != nil {
+				return "", fmt.Errorf("build response interface for schema[%d]: %w", i, err)
+			}
 		}
 
 		metas = append(metas, axiosFuncMeta{
-			FuncName:     toLowerCamel(base),
-			Method:       strings.ToUpper(string(s.Method)),
-			Path:         s.Path,
-			ParamsType:   paramsType,
-			RequestType:  requestType,
-			ResponseType: responseType,
-			HasPath:      hasPath,
-			HasQuery:     hasQuery,
-			HasHeader:    hasHeader,
-			HasCookie:    hasCookie,
-			HasReqBody:   s.RequestBody != nil,
+			FuncName:        toLowerCamel(base),
+			Method:          strings.ToUpper(string(s.Method)),
+			Path:            s.Path,
+			ParamsType:      paramsType,
+			RequestType:     requestType,
+			ResponseType:    responseType,
+			HasParams:       hasParams,
+			HasPath:         hasPath,
+			HasQuery:        hasQuery,
+			HasHeader:       hasHeader,
+			HasCookie:       hasCookie,
+			HasReqBody:      hasReqBody,
+			RequestRequired: s.RequestRequired,
 		})
 	}
 
@@ -211,21 +220,22 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 	}
 
 	for _, m := range metas {
-		paramsArg := "params: " + m.ParamsType + " = {}"
-		reqArg := "requestBody?: " + m.RequestType
-		if !m.HasPath && !m.HasQuery && !m.HasHeader && !m.HasCookie {
-			paramsArg = "_params: " + m.ParamsType + " = {}"
+		args := make([]string, 0, 2)
+		if m.HasParams {
+			args = append(args, "params: "+m.ParamsType+" = {}")
 		}
-		if !m.HasReqBody {
-			reqArg = "_requestBody?: " + m.RequestType
+		if m.HasReqBody {
+			reqArg := "requestBody?: " + m.RequestType
+			if m.RequestRequired {
+				reqArg = "requestBody: " + m.RequestType
+			}
+			args = append(args, reqArg)
 		}
 
 		b.WriteString("export const ")
 		b.WriteString(m.FuncName)
 		b.WriteString(" = async (")
-		b.WriteString(paramsArg)
-		b.WriteString(", ")
-		b.WriteString(reqArg)
+		b.WriteString(strings.Join(args, ", "))
 		b.WriteString("): Promise<")
 		b.WriteString(m.ResponseType)
 		b.WriteString("> => {\n")
@@ -258,7 +268,11 @@ func generateAxiosFromSchemas(baseURL string, schemas []Schema) (string, error) 
 			b.WriteString("    data: requestBody,\n")
 		}
 		b.WriteString("  });\n")
-		b.WriteString("  return response.data;\n")
+		if m.ResponseType == "void" {
+			b.WriteString("  return;\n")
+		} else {
+			b.WriteString("  return response.data;\n")
+		}
 		b.WriteString("};\n\n")
 	}
 

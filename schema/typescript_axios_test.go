@@ -59,42 +59,27 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 			Name:        "get_person_detail",
 			Method:      HTTPMethodPost,
 			Path:        "/person/detail",
-			RequestBody: GetPersonRequest{PersonID: "p-1001"},
+			RequestBody: GetPersonRequest{},
 			Responses: []APIResponse{
-				{StatusCode: 200, Body: PersonDetailResponse{
-					PersonID: "p-1001",
-					Name:     "Alice",
-					Age:      28,
-					Resumes: []ResumeItem{
-						{Company: "ACME", Title: "Engineer", StartDate: "2021-01-01", EndDate: "2023-12-31"},
-					},
-				}},
+				{StatusCode: 200, Body: PersonDetailResponse{}},
 			},
 		},
 		{
-			Name:   "get_person_resumes_by_range",
-			Method: HTTPMethodPost,
-			Path:   "/person/resumes/range",
-			RequestBody: GetPersonResumesByRangeRequest{
-				PersonID:  "p-1001",
-				StartTime: "2021-01-01",
-				EndTime:   "2024-01-01",
-			},
+			Name:        "get_person_resumes_by_range",
+			Method:      HTTPMethodPost,
+			Path:        "/person/resumes/range",
+			RequestBody: GetPersonResumesByRangeRequest{},
 			Responses: []APIResponse{
-				{StatusCode: 200, Body: []ResumeItem{
-					{Company: "ACME", Title: "Engineer", StartDate: "2021-01-01", EndDate: "2023-12-31"},
-				}},
+				{StatusCode: 200, Body: []ResumeItem{}},
 			},
 		},
 		{
 			Name:        "batch_upsert_resumes",
 			Method:      HTTPMethodPost,
 			Path:        "/person/resumes/batch-upsert",
-			RequestBody: []ResumeItem{{Company: "Beta", Title: "Lead", StartDate: "2024-01-01", EndDate: ""}},
+			RequestBody: []ResumeItem{{}},
 			Responses: []APIResponse{
-				{StatusCode: 200, Body: map[string]ResumeItem{
-					"latest": {Company: "Beta", Title: "Lead", StartDate: "2024-01-01", EndDate: ""},
-				}},
+				{StatusCode: 200, Body: map[string]ResumeItem{}},
 			},
 		},
 	}
@@ -127,6 +112,14 @@ func TestGenerateAndExportAxiosTS(t *testing.T) {
 	}
 	if !strings.Contains(code, "export const getPersonDetail") {
 		t.Fatalf("expected generated axios function")
+	}
+	if strings.Contains(code, "export interface GetPersonDetailParams") ||
+		strings.Contains(code, "export interface GetPersonResumesByRangeParams") ||
+		strings.Contains(code, "export interface BatchUpsertResumesParams") {
+		t.Fatalf("expected no params interfaces when params are not defined")
+	}
+	if !strings.Contains(code, "export const getPersonDetail = async (requestBody?: GetPersonRequest): Promise<PersonDetailResponse> => {") {
+		t.Fatalf("expected getPersonDetail function to have only requestBody argument")
 	}
 	if !strings.Contains(code, "export const getPersonResumesByRange = async (") ||
 		!strings.Contains(code, "requestBody?: GetPersonResumesByRangeRequest") ||
