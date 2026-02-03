@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -216,6 +217,12 @@ type WebSocketEndpoint[ClientMsg, ServerMsg any] struct {
 	HandlerFunc  func(message ClientMsg, ctx *WebSocketContext[ClientMsg, ServerMsg]) (*ServerMsg, error)
 	OnDisconnect func(ctx *WebSocketContext[ClientMsg, ServerMsg], err error)
 
+	// Optional typed handlers based on message type.
+	// When MessageHandlers is set, HandlerFunc is ignored.
+	// 可选按消息类型分发的处理器；若设置则忽略 HandlerFunc。
+	MessageHandlers   map[string]func(payload json.RawMessage, ctx *WebSocketContext[ClientMsg, ServerMsg]) (*ServerMsg, error)
+	MessageTypeGetter func(message ClientMsg) (msgType string, payload json.RawMessage, err error)
+
 	hub      *wsHub[ServerMsg]
 	fullPath string
 }
@@ -286,10 +293,7 @@ func (s *WebSocketEndpoint[ClientMsg, ServerMsg]) GinHandler() gin.HandlerFunc {
 				readErr = err
 				break
 			}
-			if s.HandlerFunc == nil {
-				continue
-			}
-			resp, err := s.HandlerFunc(message, wsCtx)
+			resp, err := s.handleMessage(message, wsCtx)
 			if err != nil {
 				readErr = err
 				break
@@ -338,6 +342,53 @@ func (s *WebSocketEndpoint[ClientMsg, ServerMsg]) ensureHub() {
 	}
 }
 
+func (s *WebSocketEndpoint[ClientMsg, ServerMsg]) handleMessage(message ClientMsg, ctx *WebSocketContext[ClientMsg, ServerMsg]) (*ServerMsg, error) {
+	if len(s.MessageHandlers) > 0 {
+		msgType, payload, err := s.extractMessageType(message)
+		if err != nil {
+			return nil, err
+		}
+		handler := s.MessageHandlers[msgType]
+		if handler == nil {
+			return nil, fmt.Errorf("websocket handler not found for message type: %s", msgType)
+		}
+		return handler(payload, ctx)
+	}
+	if s.HandlerFunc == nil {
+		return nil, nil
+	}
+	return s.HandlerFunc(message, ctx)
+}
+
+func (s *WebSocketEndpoint[ClientMsg, ServerMsg]) extractMessageType(message ClientMsg) (string, json.RawMessage, error) {
+	if s.MessageTypeGetter != nil {
+		return s.MessageTypeGetter(message)
+	}
+
+	switch v := any(message).(type) {
+	case WebSocketMessage:
+		return v.Type, v.Payload, nil
+	case *WebSocketMessage:
+		if v == nil {
+			return "", nil, errors.New("websocket message is nil")
+		}
+		return v.Type, v.Payload, nil
+	default:
+		data, err := json.Marshal(message)
+		if err != nil {
+			return "", nil, err
+		}
+		var env WebSocketMessage
+		if err := json.Unmarshal(data, &env); err != nil {
+			return "", nil, err
+		}
+		if strings.TrimSpace(env.Type) == "" {
+			return "", nil, errors.New("websocket message type is empty")
+		}
+		return env.Type, env.Payload, nil
+	}
+}
+
 // SetFullPath stores the full websocket path (including group path).
 // SetFullPath 保存 websocket 完整路径（包含 group path）。
 func (s *WebSocketEndpoint[ClientMsg, ServerMsg]) SetFullPath(path string) {
@@ -371,4 +422,11 @@ func (s *WebSocketEndpoint[ClientMsg, ServerMsg]) unregisterClient(id string) {
 		delete(WebSocketClientsByPath, path)
 	}
 	WebSocketClientsByPathMu.Unlock()
+}
+
+// WebSocketMessage is a default envelope for multi-handler messages.
+// WebSocketMessage 是多 handler 消息的默认封装。
+type WebSocketMessage struct {
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload"`
 }
