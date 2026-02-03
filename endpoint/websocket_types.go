@@ -39,6 +39,7 @@ type WebSocketEndpointMeta struct {
 type WebSocketEndpointLike interface {
 	WebSocketMeta() WebSocketEndpointMeta
 	GinHandler() gin.HandlerFunc
+	SetFullPath(path string)
 }
 
 type wsClient[ServerMsg any] struct {
@@ -114,6 +115,63 @@ func (h *wsHub[ServerMsg]) count() int {
 	return len(h.clients)
 }
 
+func (h *wsHub[ServerMsg]) snapshot() map[string]*websocket.Conn {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	out := make(map[string]*websocket.Conn, len(h.clients))
+	for id, c := range h.clients {
+		out[id] = c.conn
+	}
+	return out
+}
+
+// WebSocketClientsByPath stores all connected clients by websocket full path.
+// WebSocketClientsByPath 按 websocket 完整路径保存所有连接的客户端。
+// 注意：访问请使用 WebSocketClientsByPathMu 加锁。
+var WebSocketClientsByPath = map[string]map[string]*websocket.Conn{}
+
+// WebSocketClientsByPathMu guards WebSocketClientsByPath.
+// WebSocketClientsByPathMu 用于保护 WebSocketClientsByPath。
+var WebSocketClientsByPathMu sync.RWMutex
+
+// SnapshotWebSocketClients returns a copy of current clients for the path.
+// SnapshotWebSocketClients 返回指定路径当前客户端的副本。
+func SnapshotWebSocketClients(path string) map[string]*websocket.Conn {
+	WebSocketClientsByPathMu.RLock()
+	defer WebSocketClientsByPathMu.RUnlock()
+	src := WebSocketClientsByPath[path]
+	out := make(map[string]*websocket.Conn, len(src))
+	for id, conn := range src {
+		out[id] = conn
+	}
+	return out
+}
+
+// BroadcastWebSocketJSON sends a JSON message to all clients of the path.
+// BroadcastWebSocketJSON 向指定路径的所有客户端发送 JSON。
+func BroadcastWebSocketJSON(path string, message any) error {
+	clients := SnapshotWebSocketClients(path)
+	var firstErr error
+	for _, conn := range clients {
+		if err := conn.WriteJSON(message); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+// SendWebSocketJSON sends a JSON message to a specific client of the path.
+// SendWebSocketJSON 向指定路径的某个客户端发送 JSON。
+func SendWebSocketJSON(path string, clientID string, message any) error {
+	WebSocketClientsByPathMu.RLock()
+	conn := WebSocketClientsByPath[path][clientID]
+	WebSocketClientsByPathMu.RUnlock()
+	if conn == nil {
+		return fmt.Errorf("websocket client not found: %s", clientID)
+	}
+	return conn.WriteJSON(message)
+}
+
 // WebSocketContext provides access to the current connection and publish helpers.
 // WebSocketContext 提供当前连接与发布消息的方法。
 type WebSocketContext[ClientMsg, ServerMsg any] struct {
@@ -158,7 +216,8 @@ type WebSocketEndpoint[ClientMsg, ServerMsg any] struct {
 	HandlerFunc  func(message ClientMsg, ctx *WebSocketContext[ClientMsg, ServerMsg]) (*ServerMsg, error)
 	OnDisconnect func(ctx *WebSocketContext[ClientMsg, ServerMsg], err error)
 
-	hub *wsHub[ServerMsg]
+	hub      *wsHub[ServerMsg]
+	fullPath string
 }
 
 // NewWebSocketEndpoint constructs a WebSocketEndpoint with initialized hub.
@@ -203,6 +262,7 @@ func (s *WebSocketEndpoint[ClientMsg, ServerMsg]) GinHandler() gin.HandlerFunc {
 			return
 		}
 		client := s.hub.add(conn)
+		s.registerClient(client.id, conn)
 		wsCtx := &WebSocketContext[ClientMsg, ServerMsg]{
 			ID:       client.id,
 			Conn:     conn,
@@ -213,6 +273,7 @@ func (s *WebSocketEndpoint[ClientMsg, ServerMsg]) GinHandler() gin.HandlerFunc {
 		if s.OnConnect != nil {
 			if err := s.OnConnect(wsCtx); err != nil {
 				s.hub.remove(client.id)
+				s.unregisterClient(client.id)
 				_ = conn.Close()
 				return
 			}
@@ -242,6 +303,7 @@ func (s *WebSocketEndpoint[ClientMsg, ServerMsg]) GinHandler() gin.HandlerFunc {
 		}
 
 		s.hub.remove(client.id)
+		s.unregisterClient(client.id)
 		_ = conn.Close()
 		if s.OnDisconnect != nil {
 			s.OnDisconnect(wsCtx, readErr)
@@ -276,102 +338,37 @@ func (s *WebSocketEndpoint[ClientMsg, ServerMsg]) ensureHub() {
 	}
 }
 
-// WebSocketAPI describes websocket endpoints, supports gin registration and TS export.
-// WebSocketAPI 描述 websocket 端点，可构建 gin.RouterGroup，并生成 TS。
-type WebSocketAPI struct {
-	BasePath  string
-	GroupPath string
-	Endpoints []WebSocketEndpointLike
+// SetFullPath stores the full websocket path (including group path).
+// SetFullPath 保存 websocket 完整路径（包含 group path）。
+func (s *WebSocketEndpoint[ClientMsg, ServerMsg]) SetFullPath(path string) {
+	s.fullPath = path
 }
 
-// BuildGinGroup registers all websocket endpoints and returns the RouterGroup.
-// BuildGinGroup 注册所有 websocket 端点并返回 RouterGroup。
-func (s WebSocketAPI) BuildGinGroup(engine *gin.Engine) (*gin.RouterGroup, error) {
-	if engine == nil {
-		return nil, errors.New("engine is nil")
+func (s *WebSocketEndpoint[ClientMsg, ServerMsg]) registerClient(id string, conn *websocket.Conn) {
+	path := strings.TrimSpace(s.fullPath)
+	if path == "" {
+		return
 	}
-	if strings.TrimSpace(s.GroupPath) == "" {
-		return nil, errors.New("group path is required")
+	WebSocketClientsByPathMu.Lock()
+	clients, ok := WebSocketClientsByPath[path]
+	if !ok {
+		clients = map[string]*websocket.Conn{}
+		WebSocketClientsByPath[path] = clients
 	}
-	group := engine.Group(s.GroupPath)
-	if err := registerWebSocketHandlers(group, s.Endpoints); err != nil {
-		return nil, err
-	}
-	return group, nil
+	clients[id] = conn
+	WebSocketClientsByPathMu.Unlock()
 }
 
-// ExportTS generates websocket TypeScript to a relative path.
-// ExportTS 会生成 websocket TypeScript 到相对路径。
-func (s WebSocketAPI) ExportTS(relativeTSPath string) error {
-	if strings.TrimSpace(relativeTSPath) == "" {
-		relativeTSPath = "vue/composables/auto-generated-ws.ts"
+func (s *WebSocketEndpoint[ClientMsg, ServerMsg]) unregisterClient(id string) {
+	path := strings.TrimSpace(s.fullPath)
+	if path == "" {
+		return
 	}
-	base := strings.TrimSpace(s.BasePath)
-	if base == "" {
-		base = s.GroupPath
+	WebSocketClientsByPathMu.Lock()
+	clients := WebSocketClientsByPath[path]
+	delete(clients, id)
+	if len(clients) == 0 {
+		delete(WebSocketClientsByPath, path)
 	}
-	return ExportWebSocketClientFromEndpointsToTSFile(base, s.Endpoints, relativeTSPath)
-}
-
-// Build builds gin.RouterGroup and exports TS in one call.
-// Build 一次性完成 RouterGroup 构建与 TS 导出。
-func (s WebSocketAPI) Build(engine *gin.Engine, relativeTSPath string) (*gin.RouterGroup, error) {
-	group, err := s.BuildGinGroup(engine)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.ExportTS(relativeTSPath); err != nil {
-		return nil, err
-	}
-	return group, nil
-}
-
-// ApplyWebSocketEndpoints registers endpoints to gin.Engine and exports TS in one call.
-// Defaults: basePath="/ws-go/v1", tsPath="vue/composables/auto-generated-ws.ts".
-// ApplyWebSocketEndpoints 一次性完成 gin 注册与 TS 导出。
-// 默认 basePath 为 /ws-go/v1，TS 输出路径为 vue/composables/auto-generated-ws.ts。
-func ApplyWebSocketEndpoints(engine *gin.Engine, endpoints []WebSocketEndpointLike) (*gin.RouterGroup, error) {
-	basePath := "/ws-go/v1"
-	relativeTSPath := "vue/composables/auto-generated-ws.ts"
-	api := WebSocketAPI{
-		BasePath:  basePath,
-		GroupPath: basePath,
-		Endpoints: endpoints,
-	}
-	return api.Build(engine, relativeTSPath)
-}
-
-// ApplyWebSocketEndpointsDevOnly registers endpoints in all modes, but only exports TS in gin.DebugMode.
-// Defaults: basePath="/ws-go/v1", tsPath="vue/composables/auto-generated-ws.ts".
-// ApplyWebSocketEndpointsDevOnly 会在所有模式下注册路由，但仅在 gin.DebugMode 下生成 TS。
-// 默认 basePath 为 /ws-go/v1，TS 输出路径为 vue/composables/auto-generated-ws.ts。
-func ApplyWebSocketEndpointsDevOnly(engine *gin.Engine, endpoints []WebSocketEndpointLike) (*gin.RouterGroup, error) {
-	basePath := "/ws-go/v1"
-	relativeTSPath := "vue/composables/auto-generated-ws.ts"
-	api := WebSocketAPI{
-		BasePath:  basePath,
-		GroupPath: basePath,
-		Endpoints: endpoints,
-	}
-	group, err := api.BuildGinGroup(engine)
-	if err != nil {
-		return nil, err
-	}
-	if gin.Mode() == gin.DebugMode {
-		if err := api.ExportTS(relativeTSPath); err != nil {
-			return nil, err
-		}
-	}
-	return group, nil
-}
-
-func registerWebSocketHandlers(router gin.IRouter, endpoints []WebSocketEndpointLike) error {
-	for i := range endpoints {
-		meta := endpoints[i].WebSocketMeta()
-		if strings.TrimSpace(meta.Path) == "" {
-			return fmt.Errorf("register websocket endpoint[%d] failed: path is required", i)
-		}
-		router.GET(meta.Path, endpoints[i].GinHandler())
-	}
-	return nil
+	WebSocketClientsByPathMu.Unlock()
 }
