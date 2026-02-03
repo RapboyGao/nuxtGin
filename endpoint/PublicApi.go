@@ -76,5 +76,5 @@ func isNoType(t reflect.Type) bool {
 	if t == nil || t.Kind() == reflect.Invalid {
 		return true
 	}
-	return t == reflect.TypeOf(NoParams{}) || t == reflect.TypeOf(NoBody{})
+	return t == reflect.TypeOf(NoParams{}) || t == reflect.TypeOf(NoBody{}) || t == reflect.TypeOf(NoMessage{})
 }
