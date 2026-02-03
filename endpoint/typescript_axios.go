@@ -87,6 +87,7 @@ type axiosFuncMeta struct {
 	RequestDesc    string
 	ResponseDesc   string
 	ResponseStatus int
+	PathParamMap   map[string]string
 	HasParams      bool
 	HasPath        bool
 	HasQuery       bool
@@ -149,6 +150,7 @@ func generateAxiosFromEndpoints(baseURL string, endpoints []EndpointLike) (strin
 			ResponseType:   responseType,
 			APIDescription: strings.TrimSpace(meta.Description),
 			RequestDesc:    strings.TrimSpace(meta.RequestDescription),
+			PathParamMap:   pathParamFieldMap(meta.PathParamsType),
 			HasParams:      hasParams,
 			HasPath:        hasPath,
 			HasQuery:       hasQuery,
@@ -311,7 +313,7 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 		b.WriteString("> {\n")
 
 		b.WriteString("  const url = ")
-		b.WriteString(buildTSURLExprWithBase(baseURL, m.Path))
+		b.WriteString(buildTSURLExprWithBaseAndMap(baseURL, m.Path, m.PathParamMap))
 		b.WriteString(";\n")
 		if m.HasReqBody {
 			b.WriteString("  const requestData = options?.serializeRequest ? options.serializeRequest(requestBody) : requestBody;\n")
@@ -772,6 +774,19 @@ func buildTSURLExprWithBase(baseURL string, path string) string {
 	return buildTSURLExpr(fullPath)
 }
 
+func buildTSURLExprWithBaseAndMap(baseURL string, path string, fieldMap map[string]string) string {
+	fullPath := joinURLPath(baseURL, path)
+	template := pathParamRegexp.ReplaceAllStringFunc(fullPath, func(seg string) string {
+		raw := strings.Trim(seg, ":{}")
+		key := strings.ToLower(raw)
+		if mapped, ok := fieldMap[key]; ok && mapped != "" {
+			return "${encodeURIComponent(String(params.path?." + mapped + " ?? ''))}"
+		}
+		return "${encodeURIComponent(String(params.path?." + raw + " ?? ''))}"
+	})
+	return "`" + template + "`"
+}
+
 func joinURLPath(baseURL string, path string) string {
 	base := strings.TrimSpace(baseURL)
 	p := strings.TrimSpace(path)
@@ -795,4 +810,34 @@ func joinURLPath(baseURL string, path string) string {
 		base = "/" + base
 	}
 	return base + "/" + p
+}
+
+func pathParamFieldMap(t reflect.Type) map[string]string {
+	out := map[string]string{}
+	if t == nil || t.Kind() == reflect.Invalid {
+		return out
+	}
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return out
+	}
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.PkgPath != "" {
+			continue
+		}
+		name, _, ok := jsonFieldMeta(f)
+		if !ok {
+			continue
+		}
+		if name == "" {
+			name = f.Name
+		}
+		out[strings.ToLower(name)] = name
+		// also map the raw field name for safety
+		out[strings.ToLower(f.Name)] = f.Name
+	}
+	return out
 }
