@@ -204,6 +204,51 @@ type ServerAPI struct {
 	Endpoints []EndpointLike
 }
 
+// NewEndpoint builds an Endpoint with a simplified handler that only returns a 200 response body.
+// NewEndpoint 使用简化 handler 构建 Endpoint，只支持 200 响应返回值。
+func NewEndpoint[PP, QP, HP, CP, Req, Resp any](
+	name string,
+	method HTTPMethod,
+	path string,
+	handler func(pathParams PP, queryParams QP, headerParams HP, cookieParams CP, requestBody Req, ctx *gin.Context) (Resp, error),
+) Endpoint[PP, QP, HP, CP, Req, Resp] {
+	return Endpoint[PP, QP, HP, CP, Req, Resp]{
+		Name:   name,
+		Method: method,
+		Path:   path,
+		HandlerFunc: func(pp PP, qp QP, hp HP, cp CP, req Req, ctx *gin.Context) (Response[Resp], error) {
+			body, err := handler(pp, qp, hp, cp, req, ctx)
+			return Response[Resp]{StatusCode: http.StatusOK, Body: body}, err
+		},
+	}
+}
+
+// NewEndpointNoBody builds an Endpoint with NoBody request and 200 response.
+// NewEndpointNoBody 构建无请求体的 Endpoint，只返回 200。
+func NewEndpointNoBody[PP, QP, HP, CP, Resp any](
+	name string,
+	method HTTPMethod,
+	path string,
+	handler func(pathParams PP, queryParams QP, headerParams HP, cookieParams CP, ctx *gin.Context) (Resp, error),
+) Endpoint[PP, QP, HP, CP, NoBody, Resp] {
+	return NewEndpoint(name, method, path, func(pp PP, qp QP, hp HP, cp CP, _ NoBody, ctx *gin.Context) (Resp, error) {
+		return handler(pp, qp, hp, cp, ctx)
+	})
+}
+
+// NewEndpointNoParams builds an Endpoint without params and with 200 response.
+// NewEndpointNoParams 构建无参数的 Endpoint，只返回 200。
+func NewEndpointNoParams[Req, Resp any](
+	name string,
+	method HTTPMethod,
+	path string,
+	handler func(requestBody Req, ctx *gin.Context) (Resp, error),
+) Endpoint[NoParams, NoParams, NoParams, NoParams, Req, Resp] {
+	return NewEndpoint(name, method, path, func(_ NoParams, _ NoParams, _ NoParams, _ NoParams, req Req, ctx *gin.Context) (Resp, error) {
+		return handler(req, ctx)
+	})
+}
+
 // BuildGinGroup registers all endpoints and returns the RouterGroup.
 // BuildGinGroup 会注册所有端点并返回 RouterGroup。
 func (s ServerAPI) BuildGinGroup(engine *gin.Engine) (*gin.RouterGroup, error) {
