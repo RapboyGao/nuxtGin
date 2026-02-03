@@ -1,4 +1,4 @@
-package apiSchema
+package endpoint
 
 import (
 	"fmt"
@@ -30,33 +30,6 @@ func newTSInterfaceRegistry() *tsInterfaceRegistry {
 		nameCount:  map[string]int{},
 		typeToName: map[reflect.Type]string{},
 	}
-}
-
-func (r *tsInterfaceRegistry) ensureInterface(baseName string, value any) (string, error) {
-	body, sig, err := renderTopLevelInterface(value, r)
-	if err != nil {
-		return "", err
-	}
-	if existing, ok := r.sigToName[sig]; ok {
-		return existing, nil
-	}
-
-	name := sanitizeTypeName(baseName)
-	if name == "" {
-		name = "AnonymousType"
-	}
-	if count := r.nameCount[name]; count > 0 {
-		name = fmt.Sprintf("%s%d", name, count+1)
-	}
-	r.nameCount[sanitizeTypeName(baseName)]++
-
-	r.defs = append(r.defs, tsInterfaceDef{
-		Name: name,
-		Body: body,
-		Sig:  sig,
-	})
-	r.sigToName[sig] = name
-	return name, nil
 }
 
 func (r *tsInterfaceRegistry) ensureNamedStructType(t reflect.Type) (string, error) {
@@ -104,126 +77,48 @@ func (r *tsInterfaceRegistry) ensureNamedStructType(t reflect.Type) (string, err
 }
 
 type axiosFuncMeta struct {
-	FuncName        string
-	Method          string
-	Path            string
-	ParamsType      string
-	RequestType     string
-	ResponseType    string
-	APIDescription  string
-	RequestDesc     string
-	ResponseDesc    string
-	ResponseStatus  int
-	HasParams       bool
-	HasPath         bool
-	HasQuery        bool
-	HasHeader       bool
-	HasCookie       bool
-	HasReqBody      bool
-	RequestRequired bool
+	FuncName       string
+	Method         string
+	Path           string
+	ParamsType     string
+	RequestType    string
+	ResponseType   string
+	APIDescription string
+	RequestDesc    string
+	ResponseDesc   string
+	ResponseStatus int
+	HasParams      bool
+	HasPath        bool
+	HasQuery       bool
+	HasHeader      bool
+	HasCookie      bool
+	HasReqBody     bool
 }
 
-// generateAxiosFromSchemas converts schemas into TypeScript axios client code.
-// It also generates export interfaces for Params / RequestBody / ResponseBody,
-// and deduplicates identical interface shapes globally.
-func generateAxiosFromSchemas(baseURL string, schemas []ApiSchema) (string, error) {
+func generateAxiosFromEndpoints(baseURL string, endpoints []EndpointLike) (string, error) {
 	registry := newTSInterfaceRegistry()
-	metas := make([]axiosFuncMeta, 0, len(schemas))
+	metas := make([]axiosFuncMeta, 0, len(endpoints))
 
-	for i, s := range schemas {
-		var err error
-		if err := validateSchemaForAxios(s); err != nil {
-			return "", fmt.Errorf("schema[%d] validation failed: %w", i, err)
-		}
-		base := schemaBaseName(s, i)
-
-		paramsShape, hasPath, hasQuery, hasHeader, hasCookie := buildParamsShape(s)
-		hasParams := hasPath || hasQuery || hasHeader || hasCookie
-		paramsType := ""
-		if hasParams {
-			paramsType, err = resolveModelType(registry, base+"Params", paramsShape)
-			if err != nil {
-				return "", fmt.Errorf("build params interface for schema[%d]: %w", i, err)
-			}
+	for i, e := range endpoints {
+		meta := e.EndpointMeta()
+		if err := validateEndpointMeta(meta); err != nil {
+			return "", fmt.Errorf("endpoint[%d] validation failed: %w", i, err)
 		}
 
-		hasReqBody := s.RequestBody != nil
-		requestType := ""
-		if hasReqBody {
-			requestType, err = resolveModelType(registry, base+"RequestBody", s.RequestBody)
-			if err != nil {
-				return "", fmt.Errorf("build request interface for schema[%d]: %w", i, err)
-			}
-		}
-		for j := range s.Responses {
-			if s.Responses[j].Body == nil {
-				continue
-			}
-			if _, err := resolveModelType(registry, fmt.Sprintf("%sResponse%dBody", base, s.Responses[j].StatusCode), s.Responses[j].Body); err != nil {
-				return "", fmt.Errorf("build response[%d] interface for schema[%d]: %w", j, i, err)
-			}
-		}
-
-		responseShape := inferPrimaryResponseBody(s)
-		primaryResp := inferPrimaryResponse(s)
-		responseType := "void"
-		if responseShape != nil {
-			responseType, err = resolveModelType(registry, base+"ResponseBody", responseShape)
-			if err != nil {
-				return "", fmt.Errorf("build response interface for schema[%d]: %w", i, err)
-			}
-		}
-
-		metas = append(metas, axiosFuncMeta{
-			FuncName:        toLowerCamel(base),
-			Method:          strings.ToUpper(string(s.Method)),
-			Path:            s.Path,
-			ParamsType:      paramsType,
-			RequestType:     requestType,
-			ResponseType:    responseType,
-			APIDescription:  strings.TrimSpace(s.Description),
-			RequestDesc:     strings.TrimSpace(s.RequestDescription),
-			HasParams:       hasParams,
-			HasPath:         hasPath,
-			HasQuery:        hasQuery,
-			HasHeader:       hasHeader,
-			HasCookie:       hasCookie,
-			HasReqBody:      hasReqBody,
-			RequestRequired: s.RequestRequired,
-		})
-		if primaryResp != nil {
-			metas[len(metas)-1].ResponseDesc = strings.TrimSpace(primaryResp.Description)
-			metas[len(metas)-1].ResponseStatus = primaryResp.StatusCode
-		}
-	}
-
-	return renderAxiosTS(baseURL, registry, metas)
-}
-
-func generateAxiosFromTypedSchemas(baseURL string, schemas []TypedSchemaLike) (string, error) {
-	registry := newTSInterfaceRegistry()
-	metas := make([]axiosFuncMeta, 0, len(schemas))
-
-	for i, s := range schemas {
-		meta := s.TypedSchemaMeta()
-		base := schemaBaseName(ApiSchema{
-			Name:   meta.Name,
-			Method: meta.Method,
-			Path:   meta.Path,
-		}, i)
+		base := schemaBaseName(meta, i)
 
 		paramsType, hasPath, hasQuery, hasHeader, hasCookie, err := buildParamsTypeFromTypes(registry, meta.PathParamsType, meta.QueryParamsType, meta.HeaderParamsType, meta.CookieParamsType)
 		if err != nil {
-			return "", fmt.Errorf("build params type for typed schema[%d]: %w", i, err)
+			return "", fmt.Errorf("build params type for endpoint[%d]: %w", i, err)
 		}
 		hasParams := hasPath || hasQuery || hasHeader || hasCookie
 
 		requestType := ""
-		hasReqBody := meta.RequestBodyType != nil && meta.RequestBodyType.Kind() != reflect.Invalid
+		hasReqBody := meta.RequestBodyType != nil && meta.RequestBodyType.Kind() != reflect.Invalid && !isNoType(meta.RequestBodyType)
 		if hasReqBody {
 			requestType, _, err = tsTypeFromType(meta.RequestBodyType, registry)
 			if err != nil {
-				return "", fmt.Errorf("build request type for typed schema[%d]: %w", i, err)
+				return "", fmt.Errorf("build request type for endpoint[%d]: %w", i, err)
 			}
 		}
 
@@ -232,35 +127,34 @@ func generateAxiosFromTypedSchemas(baseURL string, schemas []TypedSchemaLike) (s
 				continue
 			}
 			if _, _, err := tsTypeFromType(meta.Responses[j].BodyType, registry); err != nil {
-				return "", fmt.Errorf("build response[%d] type for typed schema[%d]: %w", j, i, err)
+				return "", fmt.Errorf("build response[%d] type for endpoint[%d]: %w", j, i, err)
 			}
 		}
 
 		responseType := "void"
-		primaryResp := inferPrimaryTypedResponse(meta)
+		primaryResp := inferPrimaryResponseMeta(meta)
 		if primaryResp != nil && primaryResp.BodyType != nil && primaryResp.BodyType.Kind() != reflect.Invalid {
 			responseType, _, err = tsTypeFromType(primaryResp.BodyType, registry)
 			if err != nil {
-				return "", fmt.Errorf("build response type for typed schema[%d]: %w", i, err)
+				return "", fmt.Errorf("build response type for endpoint[%d]: %w", i, err)
 			}
 		}
 
 		fnMeta := axiosFuncMeta{
-			FuncName:        toLowerCamel(base),
-			Method:          strings.ToUpper(string(meta.Method)),
-			Path:            meta.Path,
-			ParamsType:      paramsType,
-			RequestType:     requestType,
-			ResponseType:    responseType,
-			APIDescription:  strings.TrimSpace(meta.Description),
-			RequestDesc:     strings.TrimSpace(meta.RequestDescription),
-			HasParams:       hasParams,
-			HasPath:         hasPath,
-			HasQuery:        hasQuery,
-			HasHeader:       hasHeader,
-			HasCookie:       hasCookie,
-			HasReqBody:      hasReqBody,
-			RequestRequired: hasReqBody,
+			FuncName:       toLowerCamel(base),
+			Method:         strings.ToUpper(string(meta.Method)),
+			Path:           meta.Path,
+			ParamsType:     paramsType,
+			RequestType:    requestType,
+			ResponseType:   responseType,
+			APIDescription: strings.TrimSpace(meta.Description),
+			RequestDesc:    strings.TrimSpace(meta.RequestDescription),
+			HasParams:      hasParams,
+			HasPath:        hasPath,
+			HasQuery:       hasQuery,
+			HasHeader:      hasHeader,
+			HasCookie:      hasCookie,
+			HasReqBody:     hasReqBody,
 		}
 		if primaryResp != nil {
 			fnMeta.ResponseDesc = strings.TrimSpace(primaryResp.Description)
@@ -270,6 +164,30 @@ func generateAxiosFromTypedSchemas(baseURL string, schemas []TypedSchemaLike) (s
 	}
 
 	return renderAxiosTS(baseURL, registry, metas)
+}
+
+func exportAxiosFromEndpointsToTSFile(baseURL string, endpoints []EndpointLike, relativeTSPath string) error {
+	if strings.TrimSpace(relativeTSPath) == "" {
+		return fmt.Errorf("relative ts path is required")
+	}
+	if filepath.IsAbs(relativeTSPath) {
+		return fmt.Errorf("ts file path must be relative to cwd")
+	}
+
+	code, err := generateAxiosFromEndpoints(baseURL, endpoints)
+	if err != nil {
+		return err
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	fullPath := filepath.Clean(filepath.Join(cwd, relativeTSPath))
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(fullPath, []byte(code), 0o644)
 }
 
 func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosFuncMeta) (string, error) {
@@ -440,99 +358,21 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 	return strings.TrimSpace(b.String()) + "\n", nil
 }
 
-func validateSchemaForAxios(s ApiSchema) error {
-	pathParamNames := extractPathParams(s.Path)
-	pathParamSet := make(map[string]struct{}, len(pathParamNames))
-	for _, n := range pathParamNames {
-		pathParamSet[n] = struct{}{}
+func validateEndpointMeta(meta EndpointMeta) error {
+	if strings.TrimSpace(string(meta.Method)) == "" {
+		return fmt.Errorf("method is required")
 	}
-
-	for key := range s.PathParams {
-		if _, ok := pathParamSet[key]; !ok {
-			return fmt.Errorf("path param %q not found in path %q", key, s.Path)
-		}
+	if !meta.Method.IsValid() {
+		return fmt.Errorf("invalid http method")
 	}
-	for key := range s.QueryParams {
-		if _, ok := pathParamSet[key]; ok {
-			return fmt.Errorf("query param %q conflicts with path param in path %q", key, s.Path)
-		}
+	if strings.TrimSpace(meta.Path) == "" {
+		return fmt.Errorf("path is required")
+	}
+	pathParams := extractPathParams(meta.Path)
+	if len(pathParams) > 0 && isNoType(meta.PathParamsType) {
+		return fmt.Errorf("path params required but PathParams type is NoParams")
 	}
 	return nil
-}
-
-// exportAxiosFromSchemasToTSFile generates axios TypeScript code and writes it to
-// a .ts file path that must be relative to the current working directory.
-func exportAxiosFromSchemasToTSFile(baseURL string, schemas []ApiSchema, relativeTSPath string) error {
-	if strings.TrimSpace(relativeTSPath) == "" {
-		return fmt.Errorf("relative ts path is required")
-	}
-	if filepath.IsAbs(relativeTSPath) {
-		return fmt.Errorf("ts file path must be relative to cwd")
-	}
-
-	code, err := generateAxiosFromSchemas(baseURL, schemas)
-	if err != nil {
-		return err
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	fullPath := filepath.Clean(filepath.Join(cwd, relativeTSPath))
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(fullPath, []byte(code), 0o644)
-}
-
-func exportAxiosFromTypedSchemasToTSFile(baseURL string, schemas []TypedSchemaLike, relativeTSPath string) error {
-	if strings.TrimSpace(relativeTSPath) == "" {
-		return fmt.Errorf("relative ts path is required")
-	}
-	if filepath.IsAbs(relativeTSPath) {
-		return fmt.Errorf("ts file path must be relative to cwd")
-	}
-
-	code, err := generateAxiosFromTypedSchemas(baseURL, schemas)
-	if err != nil {
-		return err
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	fullPath := filepath.Clean(filepath.Join(cwd, relativeTSPath))
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(fullPath, []byte(code), 0o644)
-}
-
-func buildParamsShape(s ApiSchema) (map[string]any, bool, bool, bool, bool) {
-	params := map[string]any{}
-
-	pathParams := cloneAnyMap(s.PathParams)
-	for _, p := range extractPathParams(s.Path) {
-		if _, ok := pathParams[p]; !ok {
-			pathParams[p] = ""
-		}
-	}
-	if len(pathParams) > 0 {
-		params["path"] = pathParams
-	}
-	if len(s.QueryParams) > 0 {
-		params["query"] = s.QueryParams
-	}
-	if len(s.HeaderParams) > 0 {
-		params["header"] = s.HeaderParams
-	}
-	if len(s.CookieParams) > 0 {
-		params["cookie"] = s.CookieParams
-	}
-
-	return params, len(pathParams) > 0, len(s.QueryParams) > 0, len(s.HeaderParams) > 0, len(s.CookieParams) > 0
 }
 
 func buildParamsTypeFromTypes(registry *tsInterfaceRegistry, pathType, queryType, headerType, cookieType reflect.Type) (string, bool, bool, bool, bool, error) {
@@ -602,10 +442,10 @@ func buildInlineObjectType(fields map[string]string) string {
 }
 
 func isValidType(t reflect.Type) bool {
-	return t != nil && t.Kind() != reflect.Invalid
+	return t != nil && t.Kind() != reflect.Invalid && !isNoType(t)
 }
 
-func inferPrimaryTypedResponse(meta TypedSchemaMeta) *TypedResponseMeta {
+func inferPrimaryResponseMeta(meta EndpointMeta) *ResponseMeta {
 	if len(meta.Responses) == 0 {
 		return nil
 	}
@@ -618,133 +458,11 @@ func inferPrimaryTypedResponse(meta TypedSchemaMeta) *TypedResponseMeta {
 	return &meta.Responses[0]
 }
 
-func inferPrimaryResponseBody(s ApiSchema) any {
-	primary := inferPrimaryResponse(s)
-	if primary == nil {
-		return nil
-	}
-	return primary.Body
-}
-
-func inferPrimaryResponse(s ApiSchema) *APIResponse {
-	if len(s.Responses) == 0 {
-		return nil
-	}
-
-	// Prefer the first 2xx response as the primary axios return type.
-	for i := range s.Responses {
-		code := s.Responses[i].StatusCode
-		if code >= 200 && code < 300 {
-			return &s.Responses[i]
-		}
-	}
-	return &s.Responses[0]
-}
-
-func cloneAnyMap(m map[string]any) map[string]any {
-	if len(m) == 0 {
-		return map[string]any{}
-	}
-	out := make(map[string]any, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
-	return out
-}
-
-var pathParamRegexp = regexp.MustCompile(`:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\}`)
-
-func extractPathParams(path string) []string {
-	matches := pathParamRegexp.FindAllStringSubmatch(path, -1)
-	if len(matches) == 0 {
-		return nil
-	}
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(matches))
-	for _, m := range matches {
-		name := m[1]
-		if name == "" {
-			name = m[2]
-		}
-		if name == "" {
-			continue
-		}
-		if _, ok := seen[name]; ok {
-			continue
-		}
-		seen[name] = struct{}{}
-		out = append(out, name)
-	}
-	return out
-}
-
-func buildTSURLExpr(path string) string {
-	template := pathParamRegexp.ReplaceAllStringFunc(path, func(seg string) string {
-		name := strings.Trim(seg, ":{}")
-		return "${encodeURIComponent(String(params.path?." + name + " ?? ''))}"
-	})
-	return "`" + template + "`"
-}
-
-func buildTSURLExprWithBase(baseURL string, path string) string {
-	fullPath := joinURLPath(baseURL, path)
-	return buildTSURLExpr(fullPath)
-}
-
-func joinURLPath(baseURL string, path string) string {
-	base := strings.TrimSpace(baseURL)
-	p := strings.TrimSpace(path)
-
-	if base == "" {
-		if strings.HasPrefix(p, "/") {
-			return p
-		}
-		return "/" + p
-	}
-	if p == "" {
-		if strings.HasPrefix(base, "/") {
-			return strings.TrimRight(base, "/")
-		}
-		return "/" + strings.TrimRight(base, "/")
-	}
-
-	base = strings.TrimRight(base, "/")
-	p = strings.TrimLeft(p, "/")
-	if !strings.HasPrefix(base, "/") {
-		base = "/" + base
-	}
-	return base + "/" + p
-}
-
-func resolveModelType(registry *tsInterfaceRegistry, fallbackName string, value any) (string, error) {
-	v := reflect.ValueOf(value)
-	for v.IsValid() && (v.Kind() == reflect.Interface || v.Kind() == reflect.Ptr) {
-		if v.IsNil() {
-			break
-		}
-		v = v.Elem()
-	}
-	if v.IsValid() && v.Kind() == reflect.Struct && v.Type().Name() != "" && !(v.Type().PkgPath() == "time" && v.Type().Name() == "Time") {
-		return registry.ensureNamedStructType(v.Type())
-	}
-	if !v.IsValid() {
-		return registry.ensureInterface(fallbackName, map[string]any{})
-	}
-
-	// For top-level request/response array or dictionary, use direct TS types
-	// (e.g. ResumeItem[] / Record<string, ResumeItem>) instead of wrapper interfaces.
-	t, _, err := tsTypeFromValue(v, registry)
-	if err != nil {
-		return "", err
-	}
-	return t, nil
-}
-
-func schemaBaseName(s ApiSchema, index int) string {
-	if n := strings.TrimSpace(s.Name); n != "" {
+func schemaBaseName(meta EndpointMeta, index int) string {
+	if n := strings.TrimSpace(meta.Name); n != "" {
 		return toUpperCamel(n)
 	}
-	raw := strings.ToLower(string(s.Method)) + "_" + s.Path
+	raw := strings.ToLower(string(meta.Method)) + "_" + meta.Path
 	raw = strings.ReplaceAll(raw, "{", " ")
 	raw = strings.ReplaceAll(raw, "}", " ")
 	raw = strings.ReplaceAll(raw, ":", " by ")
@@ -1013,4 +731,68 @@ func tsPropName(name string) string {
 
 func escapeTSComment(s string) string {
 	return strings.ReplaceAll(s, "*/", "* /")
+}
+
+var pathParamRegexp = regexp.MustCompile(`:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+func extractPathParams(path string) []string {
+	matches := pathParamRegexp.FindAllStringSubmatch(path, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(matches))
+	for _, m := range matches {
+		name := m[1]
+		if name == "" {
+			name = m[2]
+		}
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	return out
+}
+
+func buildTSURLExpr(path string) string {
+	template := pathParamRegexp.ReplaceAllStringFunc(path, func(seg string) string {
+		name := strings.Trim(seg, ":{}")
+		return "${encodeURIComponent(String(params.path?." + name + " ?? ''))}"
+	})
+	return "`" + template + "`"
+}
+
+func buildTSURLExprWithBase(baseURL string, path string) string {
+	fullPath := joinURLPath(baseURL, path)
+	return buildTSURLExpr(fullPath)
+}
+
+func joinURLPath(baseURL string, path string) string {
+	base := strings.TrimSpace(baseURL)
+	p := strings.TrimSpace(path)
+
+	if base == "" {
+		if strings.HasPrefix(p, "/") {
+			return p
+		}
+		return "/" + p
+	}
+	if p == "" {
+		if strings.HasPrefix(base, "/") {
+			return strings.TrimRight(base, "/")
+		}
+		return "/" + strings.TrimRight(base, "/")
+	}
+
+	base = strings.TrimRight(base, "/")
+	p = strings.TrimLeft(p, "/")
+	if !strings.HasPrefix(base, "/") {
+		base = "/" + base
+	}
+	return base + "/" + p
 }

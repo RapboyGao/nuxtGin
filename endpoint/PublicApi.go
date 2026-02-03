@@ -1,0 +1,332 @@
+package endpoint
+
+import (
+	"errors"
+	"fmt"
+	"net/http"
+	"reflect"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/mitchellh/mapstructure"
+)
+
+// HTTPMethod defines the allowed HTTP method values used by Endpoint.Method.
+// HTTPMethod 定义 Endpoint.Method 可使用的 HTTP 方法值，避免直接写字符串导致拼写错误。
+type HTTPMethod string
+
+const (
+	// HTTPMethodGet represents HTTP GET.
+	// HTTPMethodGet 表示 HTTP GET 方法。
+	HTTPMethodGet HTTPMethod = HTTPMethod(http.MethodGet)
+	// HTTPMethodPost represents HTTP POST.
+	// HTTPMethodPost 表示 HTTP POST 方法。
+	HTTPMethodPost HTTPMethod = HTTPMethod(http.MethodPost)
+	// HTTPMethodPut represents HTTP PUT.
+	// HTTPMethodPut 表示 HTTP PUT 方法。
+	HTTPMethodPut HTTPMethod = HTTPMethod(http.MethodPut)
+	// HTTPMethodPatch represents HTTP PATCH.
+	// HTTPMethodPatch 表示 HTTP PATCH 方法。
+	HTTPMethodPatch HTTPMethod = HTTPMethod(http.MethodPatch)
+	// HTTPMethodDelete represents HTTP DELETE.
+	// HTTPMethodDelete 表示 HTTP DELETE 方法。
+	HTTPMethodDelete HTTPMethod = HTTPMethod(http.MethodDelete)
+	// HTTPMethodHead represents HTTP HEAD.
+	// HTTPMethodHead 表示 HTTP HEAD 方法。
+	HTTPMethodHead HTTPMethod = HTTPMethod(http.MethodHead)
+	// HTTPMethodOptions represents HTTP OPTIONS.
+	// HTTPMethodOptions 表示 HTTP OPTIONS 方法。
+	HTTPMethodOptions HTTPMethod = HTTPMethod(http.MethodOptions)
+)
+
+// IsValid returns whether m is one of the supported HTTP method constants.
+// IsValid 用于判断 m 是否是当前库支持的 HTTPMethod 常量之一。
+func (m HTTPMethod) IsValid() bool {
+	switch m {
+	case HTTPMethodGet, HTTPMethodPost, HTTPMethodPut, HTTPMethodPatch, HTTPMethodDelete, HTTPMethodHead, HTTPMethodOptions:
+		return true
+	default:
+		return false
+	}
+}
+
+// NoParams is a marker type meaning "no params".
+// NoParams 是一个标记类型，表示“没有参数”。
+type NoParams struct{}
+
+// NoBody is a marker type meaning "no request body".
+// NoBody 是一个标记类型，表示“没有请求体”。
+type NoBody struct{}
+
+// Response is a typed response wrapper for Endpoint handlers.
+// Response 是 Endpoint 处理函数的强类型响应封装。
+type Response[T any] struct {
+	StatusCode  int    `json:"statusCode"`
+	Body        T      `json:"body,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// EndpointMeta is the metadata view used to generate TypeScript from Endpoint.
+// EndpointMeta 是用于 TS 生成的元数据视图。
+type EndpointMeta struct {
+	Name               string
+	Method             HTTPMethod
+	Path               string
+	Description        string
+	RequestDescription string
+	PathParamsType     reflect.Type
+	QueryParamsType    reflect.Type
+	HeaderParamsType   reflect.Type
+	CookieParamsType   reflect.Type
+	RequestBodyType    reflect.Type
+	Responses          []ResponseMeta
+}
+
+// ResponseMeta is the response metadata used to generate TypeScript.
+// ResponseMeta 是用于 TS 生成的响应元数据。
+type ResponseMeta struct {
+	StatusCode  int
+	BodyType    reflect.Type
+	Description string
+}
+
+// EndpointLike is implemented by Endpoint to expose metadata and gin handler.
+// EndpointLike 由 Endpoint 实现，用于暴露元数据与 gin handler。
+type EndpointLike interface {
+	EndpointMeta() EndpointMeta
+	GinHandler() gin.HandlerFunc
+}
+
+// Endpoint is a strongly-typed server API definition.
+// HandlerFunc receives typed params/body and returns a typed Response.
+// Endpoint 是强类型服务器端 API 定义，HandlerFunc 接收强类型参数并返回强类型 Response。
+type Endpoint[PP, QP, HP, CP, Req, Resp any] struct {
+	Name               string
+	Method             HTTPMethod
+	Path               string
+	Description        string
+	RequestDescription string
+	PathParams         PP
+	QueryParams        QP
+	HeaderParams       HP
+	CookieParams       CP
+	RequestBody        Req
+	Responses          []Response[Resp]
+	HandlerFunc        func(pathParams PP, queryParams QP, headerParams HP, cookieParams CP, requestBody Req, ctx *gin.Context) (Response[Resp], error)
+}
+
+// EndpointMeta exposes metadata for TS generation.
+// EndpointMeta 暴露 TS 生成所需的元数据。
+func (s Endpoint[PP, QP, HP, CP, Req, Resp]) EndpointMeta() EndpointMeta {
+	meta := EndpointMeta{
+		Name:               s.Name,
+		Method:             s.Method,
+		Path:               s.Path,
+		Description:        s.Description,
+		RequestDescription: s.RequestDescription,
+		PathParamsType:     typeOf[PP](),
+		QueryParamsType:    typeOf[QP](),
+		HeaderParamsType:   typeOf[HP](),
+		CookieParamsType:   typeOf[CP](),
+		RequestBodyType:    typeOf[Req](),
+	}
+	if len(s.Responses) == 0 {
+		meta.Responses = []ResponseMeta{{
+			StatusCode: 200,
+			BodyType:   typeOf[Resp](),
+		}}
+		return meta
+	}
+	meta.Responses = make([]ResponseMeta, 0, len(s.Responses))
+	for _, r := range s.Responses {
+		meta.Responses = append(meta.Responses, ResponseMeta{
+			StatusCode:  r.StatusCode,
+			BodyType:    typeOf[Resp](),
+			Description: r.Description,
+		})
+	}
+	return meta
+}
+
+// GinHandler builds a gin.HandlerFunc that auto-binds params/body and calls HandlerFunc.
+// GinHandler 会自动绑定参数/请求体并调用 HandlerFunc。
+func (s Endpoint[PP, QP, HP, CP, Req, Resp]) GinHandler() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		pathParams, err := bindStructT[PP](ctx.ShouldBindUri)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		queryParams, err := bindStructT[QP](ctx.ShouldBindQuery)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		headerParams, err := bindStructT[HP](ctx.ShouldBindHeader)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		cookieParams, err := bindCookieStructT[CP](ctx)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		requestBody, err := bindJSONStructT[Req](ctx)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		resp, callErr := s.HandlerFunc(pathParams, queryParams, headerParams, cookieParams, requestBody, ctx)
+		status := http.StatusOK
+		if resp.StatusCode > 0 {
+			status = resp.StatusCode
+		}
+		if callErr != nil {
+			ctx.JSON(status, gin.H{"error": callErr.Error()})
+			return
+		}
+		ctx.JSON(status, resp.Body)
+	}
+}
+
+func typeOf[T any]() reflect.Type {
+	var p *T
+	return reflect.TypeOf(p).Elem()
+}
+
+// ServerAPI is the single struct you use to describe server-side APIs.
+// It can build a gin.RouterGroup and export axios TypeScript.
+// ServerAPI 是你用于描述服务器端 API 的唯一结构体；
+// 可构建 gin.RouterGroup，并生成 axios TypeScript。
+type ServerAPI struct {
+	BasePath  string
+	GroupPath string
+	Endpoints []EndpointLike
+}
+
+// BuildGinGroup registers all endpoints and returns the RouterGroup.
+// BuildGinGroup 会注册所有端点并返回 RouterGroup。
+func (s ServerAPI) BuildGinGroup(engine *gin.Engine) (*gin.RouterGroup, error) {
+	if engine == nil {
+		return nil, errors.New("engine is nil")
+	}
+	if strings.TrimSpace(s.GroupPath) == "" {
+		return nil, errors.New("group path is required")
+	}
+	group := engine.Group(s.GroupPath)
+	if err := registerEndpointHandlers(group, s.Endpoints); err != nil {
+		return nil, err
+	}
+	return group, nil
+}
+
+// ExportTS generates axios TypeScript to a relative path.
+// If relativeTSPath is empty, it defaults to vue/composables/my-schemas.ts.
+// ExportTS 会生成 axios TypeScript 到相对路径；
+// 若 relativeTSPath 为空，则默认 vue/composables/my-schemas.ts。
+func (s ServerAPI) ExportTS(relativeTSPath string) error {
+	if strings.TrimSpace(relativeTSPath) == "" {
+		relativeTSPath = "vue/composables/my-schemas.ts"
+	}
+	base := strings.TrimSpace(s.BasePath)
+	if base == "" {
+		base = s.GroupPath
+	}
+	return ExportAxiosFromEndpointsToTSFile(base, s.Endpoints, relativeTSPath)
+}
+
+// Build builds gin.RouterGroup and exports TS in one call.
+// Build 一次性完成 RouterGroup 构建与 TS 导出。
+func (s ServerAPI) Build(engine *gin.Engine, relativeTSPath string) (*gin.RouterGroup, error) {
+	group, err := s.BuildGinGroup(engine)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ExportTS(relativeTSPath); err != nil {
+		return nil, err
+	}
+	return group, nil
+}
+
+// GenerateAxiosFromEndpoints generates TypeScript axios client source code from endpoints.
+// GenerateAxiosFromEndpoints 根据 Endpoint 列表生成 TypeScript axios 客户端代码。
+func GenerateAxiosFromEndpoints(basePath string, endpoints []EndpointLike) (string, error) {
+	return generateAxiosFromEndpoints(basePath, endpoints)
+}
+
+// ExportAxiosFromEndpointsToTSFile writes generated TS code from endpoints to a file.
+// ExportAxiosFromEndpointsToTSFile 将 Endpoint 生成的 TS 代码写入文件。
+func ExportAxiosFromEndpointsToTSFile(basePath string, endpoints []EndpointLike, relativeTSPath string) error {
+	return exportAxiosFromEndpointsToTSFile(basePath, endpoints, relativeTSPath)
+}
+
+func registerEndpointHandlers(router gin.IRouter, endpoints []EndpointLike) error {
+	for i := range endpoints {
+		handler, method, path, err := buildGinHandler(endpoints[i])
+		if err != nil {
+			return fmt.Errorf("register endpoint[%d] failed: %w", i, err)
+		}
+		router.Handle(method, path, handler)
+	}
+	return nil
+}
+
+func buildGinHandler(e EndpointLike) (gin.HandlerFunc, string, string, error) {
+	meta := e.EndpointMeta()
+	if strings.TrimSpace(string(meta.Method)) == "" {
+		return nil, "", "", errors.New("method is required")
+	}
+	if strings.TrimSpace(meta.Path) == "" {
+		return nil, "", "", errors.New("path is required")
+	}
+	if !meta.Method.IsValid() {
+		return nil, "", "", errors.New("invalid http method")
+	}
+	return e.GinHandler(), string(meta.Method), meta.Path, nil
+}
+
+func bindStructT[T any](bind func(any) error) (T, error) {
+	var v T
+	if isNoType(typeOf[T]()) {
+		return v, nil
+	}
+	if err := bind(&v); err != nil {
+		return v, err
+	}
+	return v, nil
+}
+
+func bindJSONStructT[T any](ctx *gin.Context) (T, error) {
+	var v T
+	if isNoType(typeOf[T]()) {
+		return v, nil
+	}
+	if err := ctx.ShouldBindJSON(&v); err != nil {
+		return v, err
+	}
+	return v, nil
+}
+
+func bindCookieStructT[T any](ctx *gin.Context) (T, error) {
+	var v T
+	if isNoType(typeOf[T]()) {
+		return v, nil
+	}
+	cookies := map[string]string{}
+	for _, c := range ctx.Request.Cookies() {
+		cookies[c.Name] = c.Value
+	}
+	if err := mapstructure.Decode(cookies, &v); err != nil {
+		return v, err
+	}
+	return v, nil
+}
+
+func isNoType(t reflect.Type) bool {
+	if t == nil || t.Kind() == reflect.Invalid {
+		return true
+	}
+	return t == reflect.TypeOf(NoParams{}) || t == reflect.TypeOf(NoBody{})
+}
