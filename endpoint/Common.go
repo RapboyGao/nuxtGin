@@ -259,3 +259,18 @@ func GenerateAxiosFromEndpoints(basePath string, endpoints []EndpointLike) (stri
 func ExportAxiosFromEndpointsToTSFile(basePath string, endpoints []EndpointLike, relativeTSPath string) error {
 	return exportAxiosFromEndpointsToTSFile(basePath, endpoints, relativeTSPath)
 }
+
+// ApplyEndpoints registers endpoints to gin.Engine and exports TS in one call.
+// Defaults: basePath="/api-go/v1", tsPath="vue/composables/auto-generated-api.ts".
+// ApplyEndpoints 一次性完成 gin 注册与 TS 导出。
+// 默认 basePath 为 /api-go/v1，TS 输出路径为 vue/composables/auto-generated-api.ts。
+func ApplyEndpoints(engine *gin.Engine, endpoints []EndpointLike) (*gin.RouterGroup, error) {
+	basePath := "/api-go/v1"
+	relativeTSPath := "vue/composables/auto-generated-api.ts"
+	api := ServerAPI{
+		BasePath:  basePath,
+		GroupPath: basePath,
+		Endpoints: endpoints,
+	}
+	return api.Build(engine, relativeTSPath)
+}
