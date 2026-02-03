@@ -57,9 +57,9 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 
 	apis := []EndpointLike{
 		Endpoint[PathByID, NoParams, NoParams, NoParams, NoBody, PersonDetailResp]{
-			Name:        "get_person_by_id",
+			Name:        "GetPersonByID",
 			Method:      HTTPMethodGet,
-			Path:        "/person/:id",
+			Path:        "/Person/:ID",
 			Description: "Get person by id.",
 			HandlerFunc: func(path PathByID, _ NoParams, _ NoParams, _ NoParams, _ NoBody, _ *gin.Context) (Response[PersonDetailResp], error) {
 				return Response[PersonDetailResp]{StatusCode: 200}, nil
@@ -87,11 +87,11 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	}
 	code := string(data)
 
-	if !strings.Contains(code, "export async function getPersonById(") {
-		t.Fatalf("expected generated function for path param endpoint")
+	if !strings.Contains(code, "export async function getPersonByID(") {
+		t.Fatalf("expected generated function to preserve name casing")
 	}
-	if !strings.Contains(code, "params: {") || !strings.Contains(code, "id: string;") {
-		t.Fatalf("expected inline path params type")
+	if !strings.Contains(code, "params: {") || !strings.Contains(code, "ID: string;") {
+		t.Fatalf("expected inline path params type to preserve casing")
 	}
 	if !strings.Contains(code, "export interface GetPersonReq") {
 		t.Fatalf("expected request interface generation")

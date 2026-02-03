@@ -462,7 +462,7 @@ func schemaBaseName(meta EndpointMeta, index int) string {
 	if n := strings.TrimSpace(meta.Name); n != "" {
 		return toUpperCamel(n)
 	}
-	raw := strings.ToLower(string(meta.Method)) + "_" + meta.Path
+	raw := string(meta.Method) + "_" + meta.Path
 	raw = strings.ReplaceAll(raw, "{", " ")
 	raw = strings.ReplaceAll(raw, "}", " ")
 	raw = strings.ReplaceAll(raw, ":", " by ")
