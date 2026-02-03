@@ -197,6 +197,82 @@ func generateAxiosFromSchemas(baseURL string, schemas []ApiSchema) (string, erro
 		}
 	}
 
+	return renderAxiosTS(baseURL, registry, metas)
+}
+
+func generateAxiosFromTypedSchemas(baseURL string, schemas []TypedSchemaLike) (string, error) {
+	registry := newTSInterfaceRegistry()
+	metas := make([]axiosFuncMeta, 0, len(schemas))
+
+	for i, s := range schemas {
+		meta := s.TypedSchemaMeta()
+		base := schemaBaseName(ApiSchema{
+			Name:   meta.Name,
+			Method: meta.Method,
+			Path:   meta.Path,
+		}, i)
+
+		paramsType, hasPath, hasQuery, hasHeader, hasCookie, err := buildParamsTypeFromTypes(registry, meta.PathParamsType, meta.QueryParamsType, meta.HeaderParamsType, meta.CookieParamsType)
+		if err != nil {
+			return "", fmt.Errorf("build params type for typed schema[%d]: %w", i, err)
+		}
+		hasParams := hasPath || hasQuery || hasHeader || hasCookie
+
+		requestType := ""
+		hasReqBody := meta.RequestBodyType != nil && meta.RequestBodyType.Kind() != reflect.Invalid
+		if hasReqBody {
+			requestType, _, err = tsTypeFromType(meta.RequestBodyType, registry)
+			if err != nil {
+				return "", fmt.Errorf("build request type for typed schema[%d]: %w", i, err)
+			}
+		}
+
+		for j := range meta.Responses {
+			if meta.Responses[j].BodyType == nil || meta.Responses[j].BodyType.Kind() == reflect.Invalid {
+				continue
+			}
+			if _, _, err := tsTypeFromType(meta.Responses[j].BodyType, registry); err != nil {
+				return "", fmt.Errorf("build response[%d] type for typed schema[%d]: %w", j, i, err)
+			}
+		}
+
+		responseType := "void"
+		primaryResp := inferPrimaryTypedResponse(meta)
+		if primaryResp != nil && primaryResp.BodyType != nil && primaryResp.BodyType.Kind() != reflect.Invalid {
+			responseType, _, err = tsTypeFromType(primaryResp.BodyType, registry)
+			if err != nil {
+				return "", fmt.Errorf("build response type for typed schema[%d]: %w", i, err)
+			}
+		}
+
+		fnMeta := axiosFuncMeta{
+			FuncName:        toLowerCamel(base),
+			Method:          strings.ToUpper(string(meta.Method)),
+			Path:            meta.Path,
+			ParamsType:      paramsType,
+			RequestType:     requestType,
+			ResponseType:    responseType,
+			APIDescription:  strings.TrimSpace(meta.Description),
+			RequestDesc:     strings.TrimSpace(meta.RequestDescription),
+			HasParams:       hasParams,
+			HasPath:         hasPath,
+			HasQuery:        hasQuery,
+			HasHeader:       hasHeader,
+			HasCookie:       hasCookie,
+			HasReqBody:      hasReqBody,
+			RequestRequired: hasReqBody,
+		}
+		if primaryResp != nil {
+			fnMeta.ResponseDesc = strings.TrimSpace(primaryResp.Description)
+			fnMeta.ResponseStatus = primaryResp.StatusCode
+		}
+		metas = append(metas, fnMeta)
+	}
+
+	return renderAxiosTS(baseURL, registry, metas)
+}
+
+func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosFuncMeta) (string, error) {
 	var b strings.Builder
 	b.WriteString("import axios from 'axios';\n\n")
 	b.WriteString("const axiosClient = axios.create();\n\n")
@@ -410,6 +486,30 @@ func exportAxiosFromSchemasToTSFile(baseURL string, schemas []ApiSchema, relativ
 	return os.WriteFile(fullPath, []byte(code), 0o644)
 }
 
+func exportAxiosFromTypedSchemasToTSFile(baseURL string, schemas []TypedSchemaLike, relativeTSPath string) error {
+	if strings.TrimSpace(relativeTSPath) == "" {
+		return fmt.Errorf("relative ts path is required")
+	}
+	if filepath.IsAbs(relativeTSPath) {
+		return fmt.Errorf("ts file path must be relative to cwd")
+	}
+
+	code, err := generateAxiosFromTypedSchemas(baseURL, schemas)
+	if err != nil {
+		return err
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	fullPath := filepath.Clean(filepath.Join(cwd, relativeTSPath))
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(fullPath, []byte(code), 0o644)
+}
+
 func buildParamsShape(s ApiSchema) (map[string]any, bool, bool, bool, bool) {
 	params := map[string]any{}
 
@@ -433,6 +533,89 @@ func buildParamsShape(s ApiSchema) (map[string]any, bool, bool, bool, bool) {
 	}
 
 	return params, len(pathParams) > 0, len(s.QueryParams) > 0, len(s.HeaderParams) > 0, len(s.CookieParams) > 0
+}
+
+func buildParamsTypeFromTypes(registry *tsInterfaceRegistry, pathType, queryType, headerType, cookieType reflect.Type) (string, bool, bool, bool, bool, error) {
+	hasPath := isValidType(pathType)
+	hasQuery := isValidType(queryType)
+	hasHeader := isValidType(headerType)
+	hasCookie := isValidType(cookieType)
+
+	fields := make(map[string]string, 4)
+	if hasPath {
+		t, _, err := tsTypeFromType(pathType, registry)
+		if err != nil {
+			return "", false, false, false, false, err
+		}
+		fields["path"] = t
+	}
+	if hasQuery {
+		t, _, err := tsTypeFromType(queryType, registry)
+		if err != nil {
+			return "", false, false, false, false, err
+		}
+		fields["query"] = t
+	}
+	if hasHeader {
+		t, _, err := tsTypeFromType(headerType, registry)
+		if err != nil {
+			return "", false, false, false, false, err
+		}
+		fields["header"] = t
+	}
+	if hasCookie {
+		t, _, err := tsTypeFromType(cookieType, registry)
+		if err != nil {
+			return "", false, false, false, false, err
+		}
+		fields["cookie"] = t
+	}
+
+	if len(fields) == 0 {
+		return "", false, false, false, false, nil
+	}
+	return buildInlineObjectType(fields), hasPath, hasQuery, hasHeader, hasCookie, nil
+}
+
+func buildInlineObjectType(fields map[string]string) string {
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var b strings.Builder
+	b.WriteString("{\n")
+	for _, k := range keys {
+		b.WriteString("  ")
+		b.WriteString(k)
+		b.WriteString(": ")
+		b.WriteString(fields[k])
+		if isMultilineObjectType(fields[k]) {
+			b.WriteString(",\n")
+		} else {
+			b.WriteString(";\n")
+		}
+	}
+	b.WriteString("}")
+	return b.String()
+}
+
+func isValidType(t reflect.Type) bool {
+	return t != nil && t.Kind() != reflect.Invalid
+}
+
+func inferPrimaryTypedResponse(meta TypedSchemaMeta) *TypedResponseMeta {
+	if len(meta.Responses) == 0 {
+		return nil
+	}
+	for i := range meta.Responses {
+		code := meta.Responses[i].StatusCode
+		if code >= 200 && code < 300 {
+			return &meta.Responses[i]
+		}
+	}
+	return &meta.Responses[0]
 }
 
 func inferPrimaryResponseBody(s ApiSchema) any {

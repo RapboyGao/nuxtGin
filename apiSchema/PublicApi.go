@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -109,6 +110,100 @@ type APIResponse struct {
 	Description string `json:"description,omitempty"`
 }
 
+// Response is a typed response wrapper for TypedSchema handlers.
+// Response 是 TypedSchema 处理函数的强类型响应封装。
+type Response[T any] struct {
+	StatusCode  int    `json:"statusCode"`
+	Body        T      `json:"body,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// TypedSchemaMeta is the metadata view used to generate TypeScript from TypedSchema.
+// TypedSchemaMeta 是用于 TS 生成的元数据视图。
+type TypedSchemaMeta struct {
+	Name               string
+	Method             HTTPMethod
+	Path               string
+	Description        string
+	RequestDescription string
+	PathParamsType     reflect.Type
+	QueryParamsType    reflect.Type
+	HeaderParamsType   reflect.Type
+	CookieParamsType   reflect.Type
+	RequestBodyType    reflect.Type
+	Responses          []TypedResponseMeta
+}
+
+// TypedResponseMeta is the response metadata used to generate TypeScript.
+// TypedResponseMeta 是用于 TS 生成的响应元数据。
+type TypedResponseMeta struct {
+	StatusCode  int
+	BodyType    reflect.Type
+	Description string
+}
+
+// TypedSchemaLike is implemented by TypedSchema to expose metadata for TS generation.
+// TypedSchemaLike 由 TypedSchema 实现，用于暴露 TS 生成所需的元数据。
+type TypedSchemaLike interface {
+	TypedSchemaMeta() TypedSchemaMeta
+}
+
+// TypedSchema is a strongly-typed variant of ApiSchema.
+// HandlerFunc receives typed params/body and returns a typed Response.
+// TypedSchema 是 ApiSchema 的强类型版本，HandlerFunc 接收强类型参数并返回强类型 Response。
+type TypedSchema[PP, QP, HP, CP, Req, Resp any] struct {
+	Name               string
+	Method             HTTPMethod
+	Path               string
+	Description        string
+	RequestDescription string
+	PathParams         PP
+	QueryParams        QP
+	HeaderParams       HP
+	CookieParams       CP
+	RequestBody        Req
+	Responses          []Response[Resp]
+	HandlerFunc        func(pathParams PP, queryParams QP, headerParams HP, cookieParams CP, requestBody Req, ctx *gin.Context) (Response[Resp], error)
+}
+
+// TypedSchemaMeta exposes metadata for TS generation.
+// TypedSchemaMeta 暴露 TS 生成所需的元数据。
+func (s TypedSchema[PP, QP, HP, CP, Req, Resp]) TypedSchemaMeta() TypedSchemaMeta {
+	meta := TypedSchemaMeta{
+		Name:               s.Name,
+		Method:             s.Method,
+		Path:               s.Path,
+		Description:        s.Description,
+		RequestDescription: s.RequestDescription,
+		PathParamsType:     typeOf[PP](),
+		QueryParamsType:    typeOf[QP](),
+		HeaderParamsType:   typeOf[HP](),
+		CookieParamsType:   typeOf[CP](),
+		RequestBodyType:    typeOf[Req](),
+	}
+	if len(s.Responses) == 0 {
+		meta.Responses = []TypedResponseMeta{{
+			StatusCode: 200,
+			BodyType:   typeOf[Resp](),
+		}}
+		return meta
+	}
+	meta.Responses = make([]TypedResponseMeta, 0, len(s.Responses))
+	for _, r := range s.Responses {
+		meta.Responses = append(meta.Responses, TypedResponseMeta{
+			StatusCode:  r.StatusCode,
+			BodyType:    typeOf[Resp](),
+			Description: r.Description,
+		})
+	}
+	return meta
+}
+
+func typeOf[T any]() reflect.Type {
+	var p *T
+	return reflect.TypeOf(p).Elem()
+}
+
 // RegisterToGin validates the Schema and registers it into a gin.IRouter.
 // It checks router/method/path/handler before registration.
 // RegisterToGin 会先校验 Schema（router、method、path、handler），
@@ -155,12 +250,24 @@ func GenerateAxiosFromSchemas(basePath string, schemas []ApiSchema) (string, err
 	return generateAxiosFromSchemas(basePath, schemas)
 }
 
+// GenerateAxiosFromTypedSchemas generates TypeScript axios client source code from TypedSchema.
+// GenerateAxiosFromTypedSchemas 根据 TypedSchema 列表生成 TypeScript axios 客户端代码。
+func GenerateAxiosFromTypedSchemas(basePath string, schemas []TypedSchemaLike) (string, error) {
+	return generateAxiosFromTypedSchemas(basePath, schemas)
+}
+
 // ExportAxiosFromSchemasToTSFile generates TS axios code and writes it to a file path
 // relative to current working directory (cwd). Absolute paths are rejected.
 // ExportAxiosFromSchemasToTSFile 生成 TS axios 代码并写入相对 cwd 的文件路径，
 // 不允许传入绝对路径。
 func ExportAxiosFromSchemasToTSFile(basePath string, schemas []ApiSchema, relativeTSPath string) error {
 	return exportAxiosFromSchemasToTSFile(basePath, schemas, relativeTSPath)
+}
+
+// ExportAxiosFromTypedSchemasToTSFile writes generated TS code from TypedSchema to a file.
+// ExportAxiosFromTypedSchemasToTSFile 将 TypedSchema 生成的 TS 代码写入文件。
+func ExportAxiosFromTypedSchemasToTSFile(basePath string, schemas []TypedSchemaLike, relativeTSPath string) error {
+	return exportAxiosFromTypedSchemasToTSFile(basePath, schemas, relativeTSPath)
 }
 
 // RegisterSchemasAndExportTSInDevMode registers schemas to Gin and exports TS axios
