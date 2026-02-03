@@ -274,3 +274,27 @@ func ApplyEndpoints(engine *gin.Engine, endpoints []EndpointLike) (*gin.RouterGr
 	}
 	return api.Build(engine, relativeTSPath)
 }
+
+// ApplyEndpointsDevOnly registers endpoints in all modes, but only exports TS in gin.DebugMode.
+// Defaults: basePath="/api-go/v1", tsPath="vue/composables/auto-generated-api.ts".
+// ApplyEndpointsDevOnly 会在所有模式下注册路由，但仅在 gin.DebugMode 下生成 TS。
+// 默认 basePath 为 /api-go/v1，TS 输出路径为 vue/composables/auto-generated-api.ts。
+func ApplyEndpointsDevOnly(engine *gin.Engine, endpoints []EndpointLike) (*gin.RouterGroup, error) {
+	basePath := "/api-go/v1"
+	relativeTSPath := "vue/composables/auto-generated-api.ts"
+	api := ServerAPI{
+		BasePath:  basePath,
+		GroupPath: basePath,
+		Endpoints: endpoints,
+	}
+	group, err := api.BuildGinGroup(engine)
+	if err != nil {
+		return nil, err
+	}
+	if gin.Mode() == gin.DebugMode {
+		if err := api.ExportTS(relativeTSPath); err != nil {
+			return nil, err
+		}
+	}
+	return group, nil
+}
