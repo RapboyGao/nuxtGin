@@ -424,6 +424,30 @@ func (s *WebSocketEndpoint[ClientMsg, ServerMsg]) unregisterClient(id string) {
 	WebSocketClientsByPathMu.Unlock()
 }
 
+// RegisterWebSocketTypedHandler registers a typed handler for a message type.
+// RegisterWebSocketTypedHandler 注册指定消息类型的强类型处理器。
+func RegisterWebSocketTypedHandler[ClientMsg, ServerMsg, Payload any](
+	endpoint *WebSocketEndpoint[ClientMsg, ServerMsg],
+	messageType string,
+	handler func(payload Payload, ctx *WebSocketContext[ClientMsg, ServerMsg]) (*ServerMsg, error),
+) {
+	if endpoint == nil {
+		return
+	}
+	if endpoint.MessageHandlers == nil {
+		endpoint.MessageHandlers = map[string]func(payload json.RawMessage, ctx *WebSocketContext[ClientMsg, ServerMsg]) (*ServerMsg, error){}
+	}
+	endpoint.MessageHandlers[messageType] = func(payload json.RawMessage, ctx *WebSocketContext[ClientMsg, ServerMsg]) (*ServerMsg, error) {
+		var typed Payload
+		if len(payload) > 0 {
+			if err := json.Unmarshal(payload, &typed); err != nil {
+				return nil, err
+			}
+		}
+		return handler(typed, ctx)
+	}
+}
+
 // WebSocketMessage is a default envelope for multi-handler messages.
 // WebSocketMessage 是多 handler 消息的默认封装。
 type WebSocketMessage struct {
