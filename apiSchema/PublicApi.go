@@ -190,3 +190,26 @@ func RegisterSchemasAndExportTSInDevModeWithPath(router gin.IRouter, schemas []A
 	}
 	return ExportAxiosFromSchemasToTSFile(basePath, schemas, relativeTSPath)
 }
+
+// BuildRouterGroupFromSchemas creates a gin.RouterGroup, registers all schemas,
+// optionally exports TS axios code, and returns the group for composition.
+// BuildRouterGroupFromSchemas 会创建一个 gin.RouterGroup，
+// 批量注册所有 ApiSchema，并可选导出 TS 客户端代码，然后返回该 group。
+// If relativeTSPath is empty, it defaults to vue/composables/my-schemas.ts.
+// 若 relativeTSPath 为空，则默认使用 vue/composables/my-schemas.ts。
+func BuildRouterGroupFromSchemas(engine *gin.Engine, groupPath string, schemas []ApiSchema, basePath string, relativeTSPath string) (*gin.RouterGroup, error) {
+	if engine == nil {
+		return nil, errors.New("engine is nil")
+	}
+	if strings.TrimSpace(relativeTSPath) == "" {
+		relativeTSPath = "vue/composables/my-schemas.ts"
+	}
+	group := engine.Group(groupPath)
+	if err := RegisterAPIsToGin(group, schemas); err != nil {
+		return nil, err
+	}
+	if err := ExportAxiosFromSchemasToTSFile(basePath, schemas, relativeTSPath); err != nil {
+		return nil, err
+	}
+	return group, nil
+}
