@@ -13,5 +13,8 @@
     "samber",
     "TSURL",
     "xuri"
-  ]
+  ],
+  "material-icon-theme.folders.associations": {
+    "endpoint": "api"
+  }
 }
