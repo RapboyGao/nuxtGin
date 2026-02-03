@@ -32,6 +32,19 @@ type PersonDetailResp struct {
 	Resumes  []ResumeItem `json:"resumes"`
 }
 
+type QueryParams struct {
+	Page     int `json:"Page"`
+	PageSize int `json:"pageSize"`
+}
+
+type HeaderParams struct {
+	ClientID string `json:"ClientID"`
+}
+
+type CookieParams struct {
+	SessionID string `json:"sessionID"`
+}
+
 func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -74,6 +87,17 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 				return Response[PersonDetailResp]{StatusCode: 200}, nil
 			},
 		},
+		Endpoint[NoParams, QueryParams, HeaderParams, CookieParams, NoBody, PersonDetailResp]{
+			Name:         "list_people",
+			Method:       HTTPMethodGet,
+			Path:         "/people",
+			QueryParams:  QueryParams{},
+			HeaderParams: HeaderParams{},
+			CookieParams: CookieParams{},
+			HandlerFunc: func(_ NoParams, _ QueryParams, _ HeaderParams, _ CookieParams, _ NoBody, _ *gin.Context) (Response[PersonDetailResp], error) {
+				return Response[PersonDetailResp]{StatusCode: 200}, nil
+			},
+		},
 	}
 
 	outPath := filepath.Join(".generated", "schema", "server_api.ts")
@@ -92,6 +116,12 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	}
 	if !strings.Contains(code, "params: {") || !strings.Contains(code, "ID: string;") {
 		t.Fatalf("expected inline path params type to preserve casing")
+	}
+	if !strings.Contains(code, "normalizeParamKeys") {
+		t.Fatalf("expected param key normalization helper")
+	}
+	if !strings.Contains(code, "normalizedParams.query") || !strings.Contains(code, "normalizedParams.header") || !strings.Contains(code, "normalizedParams.cookie") {
+		t.Fatalf("expected normalized params usage for query/header/cookie")
 	}
 	if !strings.Contains(code, "export interface GetPersonReq") {
 		t.Fatalf("expected request interface generation")

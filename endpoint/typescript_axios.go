@@ -88,6 +88,9 @@ type axiosFuncMeta struct {
 	ResponseDesc   string
 	ResponseStatus int
 	PathParamMap   map[string]string
+	QueryParamMap  map[string]string
+	HeaderParamMap map[string]string
+	CookieParamMap map[string]string
 	HasParams      bool
 	HasPath        bool
 	HasQuery       bool
@@ -151,6 +154,9 @@ func generateAxiosFromEndpoints(baseURL string, endpoints []EndpointLike) (strin
 			APIDescription: strings.TrimSpace(meta.Description),
 			RequestDesc:    strings.TrimSpace(meta.RequestDescription),
 			PathParamMap:   pathParamFieldMap(meta.PathParamsType),
+			QueryParamMap:  paramFieldMap(meta.QueryParamsType),
+			HeaderParamMap: paramFieldMap(meta.HeaderParamsType),
+			CookieParamMap: paramFieldMap(meta.CookieParamsType),
 			HasParams:      hasParams,
 			HasPath:        hasPath,
 			HasQuery:       hasQuery,
@@ -235,6 +241,23 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 	b.WriteString("  serializeRequest?: (value: TRequest) => unknown;\n")
 	b.WriteString("  deserializeResponse?: (value: unknown) => TResponse;\n")
 	b.WriteString("}\n\n")
+	b.WriteString("const normalizeParamKeys = (\n")
+	b.WriteString("  params: Record<string, any>,\n")
+	b.WriteString("  maps: { query?: Record<string, string>; header?: Record<string, string>; cookie?: Record<string, string> }\n")
+	b.WriteString(") => {\n")
+	b.WriteString("  const out: Record<string, any> = {};\n")
+	b.WriteString("  for (const key of ['query', 'header', 'cookie']) {\n")
+	b.WriteString("    const group = (params as any)?.[key] ?? {};\n")
+	b.WriteString("    const map = (maps as any)?.[key] ?? {};\n")
+	b.WriteString("    const normalized: Record<string, any> = {};\n")
+	b.WriteString("    for (const [k, v] of Object.entries(group)) {\n")
+	b.WriteString("      const mapped = map[k.toLowerCase()] ?? k;\n")
+	b.WriteString("      normalized[mapped] = v;\n")
+	b.WriteString("    }\n")
+	b.WriteString("    out[key] = normalized;\n")
+	b.WriteString("  }\n")
+	b.WriteString("  return out;\n")
+	b.WriteString("};\n\n")
 
 	needsCookieHelper := false
 	for _, m := range metas {
@@ -318,6 +341,25 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 		if m.HasReqBody {
 			b.WriteString("  const requestData = options?.serializeRequest ? options.serializeRequest(requestBody) : requestBody;\n")
 		}
+		if m.HasQuery || m.HasHeader || m.HasCookie {
+			b.WriteString("  const normalizedParams = normalizeParamKeys(params, {\n")
+			if m.HasQuery {
+				b.WriteString("    query: ")
+				b.WriteString(renderParamMapObject(m.QueryParamMap))
+				b.WriteString(",\n")
+			}
+			if m.HasHeader {
+				b.WriteString("    header: ")
+				b.WriteString(renderParamMapObject(m.HeaderParamMap))
+				b.WriteString(",\n")
+			}
+			if m.HasCookie {
+				b.WriteString("    cookie: ")
+				b.WriteString(renderParamMapObject(m.CookieParamMap))
+				b.WriteString(",\n")
+			}
+			b.WriteString("  });\n")
+		}
 		b.WriteString("  const response = await axiosClient.request<")
 		b.WriteString(m.ResponseType)
 		b.WriteString(">({\n")
@@ -326,17 +368,17 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 		b.WriteString("',\n")
 		b.WriteString("    url,\n")
 		if m.HasQuery {
-			b.WriteString("    params: params.query,\n")
+			b.WriteString("    params: normalizedParams.query,\n")
 		}
 		if m.HasHeader && !m.HasCookie {
-			b.WriteString("    headers: params.header,\n")
+			b.WriteString("    headers: normalizedParams.header,\n")
 		}
 		if m.HasCookie {
 			b.WriteString("    headers: {\n")
 			if m.HasHeader {
-				b.WriteString("      ...(params.header ?? {}),\n")
+				b.WriteString("      ...(normalizedParams.header ?? {}),\n")
 			}
-			b.WriteString("      Cookie: buildCookieHeader((params.cookie ?? {}) as Record<string, unknown>),\n")
+			b.WriteString("      Cookie: buildCookieHeader((normalizedParams.cookie ?? {}) as Record<string, unknown>),\n")
 			b.WriteString("    },\n")
 		}
 		if m.HasReqBody {
@@ -840,4 +882,34 @@ func pathParamFieldMap(t reflect.Type) map[string]string {
 		out[strings.ToLower(f.Name)] = f.Name
 	}
 	return out
+}
+
+func paramFieldMap(t reflect.Type) map[string]string {
+	return pathParamFieldMap(t)
+}
+
+func renderParamMapObject(m map[string]string) string {
+	if len(m) == 0 {
+		return "{}"
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var b strings.Builder
+	b.WriteString("{")
+	for i, k := range keys {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString("'")
+		b.WriteString(strings.ReplaceAll(k, "'", "\\'"))
+		b.WriteString("': '")
+		b.WriteString(strings.ReplaceAll(m[k], "'", "\\'"))
+		b.WriteString("'")
+	}
+	b.WriteString("}")
+	return b.String()
 }
