@@ -116,16 +116,6 @@ func (h *wsHub) count() int {
 	return len(h.clients)
 }
 
-func (h *wsHub) snapshot() map[string]*websocket.Conn {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	out := make(map[string]*websocket.Conn, len(h.clients))
-	for id, c := range h.clients {
-		out[id] = c.conn
-	}
-	return out
-}
-
 // WebSocketClientsByPath stores all connected clients by websocket full path.
 // WebSocketClientsByPath 按 websocket 完整路径保存所有连接的客户端。
 // 注意：访问请使用 WebSocketClientsByPathMu 加锁。

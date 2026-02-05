@@ -77,26 +77,29 @@ func (r *tsInterfaceRegistry) ensureNamedStructType(t reflect.Type) (string, err
 }
 
 type axiosFuncMeta struct {
-	FuncName       string
-	Method         string
-	Path           string
-	ParamsType     string
-	RequestType    string
-	ResponseType   string
-	APIDescription string
-	RequestDesc    string
-	ResponseDesc   string
-	ResponseStatus int
-	PathParamMap   map[string]string
-	QueryParamMap  map[string]string
-	HeaderParamMap map[string]string
-	CookieParamMap map[string]string
-	HasParams      bool
-	HasPath        bool
-	HasQuery       bool
-	HasHeader      bool
-	HasCookie      bool
-	HasReqBody     bool
+	FuncName         string
+	Method           string
+	Path             string
+	ParamsType       string
+	RequestType      string
+	ResponseType     string
+	ResponseWireType string
+	APIDescription   string
+	RequestDesc      string
+	ResponseDesc     string
+	ResponseStatus   int
+	PathParamMap     map[string]string
+	QueryParamMap    map[string]string
+	HeaderParamMap   map[string]string
+	CookieParamMap   map[string]string
+	HasParams        bool
+	HasPath          bool
+	HasQuery         bool
+	HasHeader        bool
+	HasCookie        bool
+	HasReqBody       bool
+	RequestKind      TSKind
+	ResponseKind     TSKind
 }
 
 func generateAxiosFromEndpoints(baseURL string, endpoints []EndpointLike) (string, error) {
@@ -107,6 +110,18 @@ func generateAxiosFromEndpoints(baseURL string, endpoints []EndpointLike) (strin
 		meta := e.EndpointMeta()
 		if err := validateEndpointMeta(meta); err != nil {
 			return "", fmt.Errorf("endpoint[%d] validation failed: %w", i, err)
+		}
+
+		requestKind := TSKindJSON
+		responseKind := TSKindJSON
+		if hintProvider, ok := e.(EndpointTSHintsProvider); ok {
+			hints := hintProvider.EndpointTSHints()
+			if hints.RequestKind != "" {
+				requestKind = hints.RequestKind
+			}
+			if hints.ResponseKind != "" {
+				responseKind = hints.ResponseKind
+			}
 		}
 
 		base := schemaBaseName(meta, i)
@@ -136,33 +151,49 @@ func generateAxiosFromEndpoints(baseURL string, endpoints []EndpointLike) (strin
 		}
 
 		responseType := "void"
+		responseWireType := "void"
 		primaryResp := inferPrimaryResponseMeta(meta)
 		if primaryResp != nil && primaryResp.BodyType != nil && primaryResp.BodyType.Kind() != reflect.Invalid {
 			responseType, _, err = tsTypeFromType(primaryResp.BodyType, registry)
 			if err != nil {
 				return "", fmt.Errorf("build response type for endpoint[%d]: %w", i, err)
 			}
+			responseWireType = responseType
+		}
+		switch responseKind {
+		case TSKindStream:
+			responseType = "Blob"
+			responseWireType = "Blob"
+		case TSKindText:
+			responseType = "string"
+			responseWireType = "string"
+		case TSKindBytes:
+			responseType = "Uint8Array"
+			responseWireType = "ArrayBuffer"
 		}
 
 		fnMeta := axiosFuncMeta{
-			FuncName:       toLowerCamel(base),
-			Method:         strings.ToUpper(string(meta.Method)),
-			Path:           meta.Path,
-			ParamsType:     paramsType,
-			RequestType:    requestType,
-			ResponseType:   responseType,
-			APIDescription: strings.TrimSpace(meta.Description),
-			RequestDesc:    strings.TrimSpace(meta.RequestDescription),
-			PathParamMap:   pathParamFieldMap(meta.PathParamsType),
-			QueryParamMap:  paramFieldMap(meta.QueryParamsType),
-			HeaderParamMap: paramFieldMap(meta.HeaderParamsType),
-			CookieParamMap: paramFieldMap(meta.CookieParamsType),
-			HasParams:      hasParams,
-			HasPath:        hasPath,
-			HasQuery:       hasQuery,
-			HasHeader:      hasHeader,
-			HasCookie:      hasCookie,
-			HasReqBody:     hasReqBody,
+			FuncName:         toLowerCamel(base),
+			Method:           strings.ToUpper(string(meta.Method)),
+			Path:             meta.Path,
+			ParamsType:       paramsType,
+			RequestType:      requestType,
+			ResponseType:     responseType,
+			ResponseWireType: responseWireType,
+			APIDescription:   strings.TrimSpace(meta.Description),
+			RequestDesc:      strings.TrimSpace(meta.RequestDescription),
+			PathParamMap:     pathParamFieldMap(meta.PathParamsType),
+			QueryParamMap:    paramFieldMap(meta.QueryParamsType),
+			HeaderParamMap:   paramFieldMap(meta.HeaderParamsType),
+			CookieParamMap:   paramFieldMap(meta.CookieParamsType),
+			HasParams:        hasParams,
+			HasPath:          hasPath,
+			HasQuery:         hasQuery,
+			HasHeader:        hasHeader,
+			HasCookie:        hasCookie,
+			HasReqBody:       hasReqBody,
+			RequestKind:      requestKind,
+			ResponseKind:     responseKind,
 		}
 		if primaryResp != nil {
 			fnMeta.ResponseDesc = strings.TrimSpace(primaryResp.Description)
@@ -228,13 +259,30 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 	b.WriteString("  }\n")
 	b.WriteString("  return value;\n")
 	b.WriteString("};\n\n")
+	b.WriteString("const toFormUrlEncoded = (value: unknown): URLSearchParams => {\n")
+	b.WriteString("  if (value instanceof URLSearchParams) return value;\n")
+	b.WriteString("  const params = new URLSearchParams();\n")
+	b.WriteString("  if (!isPlainObject(value)) return params;\n")
+	b.WriteString("  for (const [k, v] of Object.entries(value)) {\n")
+	b.WriteString("    if (v === undefined || v === null) continue;\n")
+	b.WriteString("    if (Array.isArray(v)) {\n")
+	b.WriteString("      for (const item of v) params.append(k, String(item));\n")
+	b.WriteString("      continue;\n")
+	b.WriteString("    }\n")
+	b.WriteString("    params.append(k, String(v));\n")
+	b.WriteString("  }\n")
+	b.WriteString("  return params;\n")
+	b.WriteString("};\n\n")
 	b.WriteString("axiosClient.interceptors.request.use((config) => {\n")
 	b.WriteString("  if (config.data !== undefined) config.data = normalizeRequestJSON(config.data);\n")
 	b.WriteString("  if (config.params !== undefined) config.params = normalizeRequestJSON(config.params);\n")
 	b.WriteString("  return config;\n")
 	b.WriteString("});\n\n")
 	b.WriteString("axiosClient.interceptors.response.use((response) => {\n")
-	b.WriteString("  response.data = normalizeResponseJSON(response.data);\n")
+	b.WriteString("  const rt = response.config?.responseType;\n")
+	b.WriteString("  if (rt !== 'arraybuffer' && rt !== 'blob' && rt !== 'text') {\n")
+	b.WriteString("    response.data = normalizeResponseJSON(response.data);\n")
+	b.WriteString("  }\n")
 	b.WriteString("  return response;\n")
 	b.WriteString("});\n\n")
 	b.WriteString("export interface AxiosConvertOptions<TRequest = unknown, TResponse = unknown> {\n")
@@ -339,9 +387,15 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 		b.WriteString(buildTSURLExprWithBaseAndMap(baseURL, m.Path, m.PathParamMap))
 		b.WriteString(";\n")
 		if m.HasReqBody {
-			b.WriteString("  const requestData = options?.serializeRequest ? options.serializeRequest(requestBody) : requestBody;\n")
+			if m.RequestKind == TSKindFormURLEncoded {
+				b.WriteString("  const serializedRequest = options?.serializeRequest ? options.serializeRequest(requestBody) : requestBody;\n")
+				b.WriteString("  const requestData = toFormUrlEncoded(serializedRequest);\n")
+			} else {
+				b.WriteString("  const requestData = options?.serializeRequest ? options.serializeRequest(requestBody) : requestBody;\n")
+			}
 		}
-		if m.HasQuery || m.HasHeader || m.HasCookie {
+		needsNormalizedParams := m.HasQuery || m.HasHeader || m.HasCookie
+		if needsNormalizedParams {
 			b.WriteString("  const normalizedParams = normalizeParamKeys(params, {\n")
 			if m.HasQuery {
 				b.WriteString("    query: ")
@@ -360,8 +414,36 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 			}
 			b.WriteString("  });\n")
 		}
+		requestHeaderValue := ""
+		switch m.RequestKind {
+		case TSKindFormURLEncoded:
+			requestHeaderValue = "application/x-www-form-urlencoded"
+		case TSKindText:
+			requestHeaderValue = "text/plain; charset=utf-8"
+		case TSKindBytes:
+			requestHeaderValue = "application/octet-stream"
+		}
+		needsHeaders := m.HasHeader || m.HasCookie || requestHeaderValue != ""
+		if requestHeaderValue != "" {
+			b.WriteString("  const requestHeaders = { 'Content-Type': '")
+			b.WriteString(requestHeaderValue)
+			b.WriteString("' };\n")
+		}
+		if needsHeaders {
+			b.WriteString("  const headers = {\n")
+			if m.HasHeader {
+				b.WriteString("    ...(normalizedParams?.header ?? {}),\n")
+			}
+			if requestHeaderValue != "" {
+				b.WriteString("    ...requestHeaders,\n")
+			}
+			if m.HasCookie {
+				b.WriteString("    Cookie: buildCookieHeader((normalizedParams?.cookie ?? {}) as Record<string, unknown>),\n")
+			}
+			b.WriteString("  };\n")
+		}
 		b.WriteString("  const response = await axiosClient.request<")
-		b.WriteString(m.ResponseType)
+		b.WriteString(m.ResponseWireType)
 		b.WriteString(">({\n")
 		b.WriteString("    method: '")
 		b.WriteString(m.Method)
@@ -370,16 +452,16 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 		if m.HasQuery {
 			b.WriteString("    params: normalizedParams.query,\n")
 		}
-		if m.HasHeader && !m.HasCookie {
-			b.WriteString("    headers: normalizedParams.header,\n")
+		if needsHeaders {
+			b.WriteString("    headers,\n")
 		}
-		if m.HasCookie {
-			b.WriteString("    headers: {\n")
-			if m.HasHeader {
-				b.WriteString("      ...(normalizedParams.header ?? {}),\n")
-			}
-			b.WriteString("      Cookie: buildCookieHeader((normalizedParams.cookie ?? {}) as Record<string, unknown>),\n")
-			b.WriteString("    },\n")
+		switch m.ResponseKind {
+		case TSKindStream:
+			b.WriteString("    responseType: 'blob',\n")
+		case TSKindBytes:
+			b.WriteString("    responseType: 'arraybuffer',\n")
+		case TSKindText:
+			b.WriteString("    responseType: 'text',\n")
 		}
 		if m.HasReqBody {
 			b.WriteString("    data: requestData,\n")
@@ -388,13 +470,21 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 		if m.ResponseType == "void" {
 			b.WriteString("  return;\n")
 		} else {
-			b.WriteString("  const responseData = response.data as unknown;\n")
-			b.WriteString("  if (options?.deserializeResponse) {\n")
-			b.WriteString("    return options.deserializeResponse(responseData);\n")
-			b.WriteString("  }\n")
-			b.WriteString("  return responseData as ")
-			b.WriteString(m.ResponseType)
-			b.WriteString(";\n")
+			if m.ResponseKind == TSKindBytes {
+				b.WriteString("  const responseData = new Uint8Array(response.data as ArrayBuffer);\n")
+				b.WriteString("  if (options?.deserializeResponse) {\n")
+				b.WriteString("    return options.deserializeResponse(responseData);\n")
+				b.WriteString("  }\n")
+				b.WriteString("  return responseData;\n")
+			} else {
+				b.WriteString("  const responseData = response.data as unknown;\n")
+				b.WriteString("  if (options?.deserializeResponse) {\n")
+				b.WriteString("    return options.deserializeResponse(responseData);\n")
+				b.WriteString("  }\n")
+				b.WriteString("  return responseData as ")
+				b.WriteString(m.ResponseType)
+				b.WriteString(";\n")
+			}
 		}
 		b.WriteString("}\n\n")
 	}
@@ -559,38 +649,6 @@ func toLowerCamel(s string) string {
 	return strings.ToLower(u[:1]) + u[1:]
 }
 
-func renderTopLevelInterface(value any, registry *tsInterfaceRegistry) (string, string, error) {
-	v := reflect.ValueOf(value)
-	for v.IsValid() && (v.Kind() == reflect.Interface || v.Kind() == reflect.Ptr) {
-		if v.IsNil() {
-			return "", "empty", nil
-		}
-		v = v.Elem()
-	}
-	if !v.IsValid() {
-		return "", "empty", nil
-	}
-
-	switch v.Kind() {
-	case reflect.Struct:
-		body, sig, err := renderStructBody(v, registry)
-		return body, "struct:" + sig, err
-	case reflect.Map:
-		body, sig, err := renderMapBody(v, registry)
-		return body, "map:" + sig, err
-	default:
-		t, sig, err := tsTypeFromValue(v, registry)
-		if err != nil {
-			return "", "", err
-		}
-		return "  value: " + t + ";\n", "scalar:" + sig, nil
-	}
-}
-
-func renderStructBody(v reflect.Value, registry *tsInterfaceRegistry) (string, string, error) {
-	return renderStructBodyByType(v.Type(), registry)
-}
-
 func renderStructBodyByType(t reflect.Type, registry *tsInterfaceRegistry) (string, string, error) {
 	lines := make([]string, 0, t.NumField())
 	sigs := make([]string, 0, t.NumField())
@@ -698,6 +756,15 @@ func tsTypeFromType(t reflect.Type, registry *tsInterfaceRegistry) (string, stri
 	if t.PkgPath() == "time" && t.Name() == "Time" {
 		return "string", "string", nil
 	}
+	if t.PkgPath() == "github.com/RapboyGao/nuxtGin/endpoint" && t.Name() == "FormData" {
+		return "FormData", "form_data", nil
+	}
+	if t.PkgPath() == "github.com/RapboyGao/nuxtGin/endpoint" && t.Name() == "RawBytes" {
+		return "Uint8Array", "raw_bytes", nil
+	}
+	if t.PkgPath() == "github.com/RapboyGao/nuxtGin/endpoint" && t.Name() == "StreamResponse" {
+		return "Blob", "stream_response", nil
+	}
 
 	switch t.Kind() {
 	case reflect.Bool:
@@ -801,19 +868,6 @@ func extractPathParams(path string) []string {
 		out = append(out, name)
 	}
 	return out
-}
-
-func buildTSURLExpr(path string) string {
-	template := pathParamRegexp.ReplaceAllStringFunc(path, func(seg string) string {
-		name := strings.Trim(seg, ":{}")
-		return "${encodeURIComponent(String(params.path?." + name + " ?? ''))}"
-	})
-	return "`" + template + "`"
-}
-
-func buildTSURLExprWithBase(baseURL string, path string) string {
-	fullPath := joinURLPath(baseURL, path)
-	return buildTSURLExpr(fullPath)
 }
 
 func buildTSURLExprWithBaseAndMap(baseURL string, path string, fieldMap map[string]string) string {
