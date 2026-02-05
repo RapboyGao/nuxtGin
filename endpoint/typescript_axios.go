@@ -231,6 +231,7 @@ func exportAxiosFromEndpointsToTSFile(baseURL string, endpoints []EndpointLike, 
 
 func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosFuncMeta) (string, error) {
 	var b strings.Builder
+	writeTSBanner(&b, "Nuxt Gin HTTP API Client (Axios)")
 	b.WriteString("import axios from 'axios';\n\n")
 	b.WriteString("const axiosClient = axios.create();\n\n")
 	b.WriteString("const isPlainObject = (value: unknown): value is Record<string, unknown> =>\n")

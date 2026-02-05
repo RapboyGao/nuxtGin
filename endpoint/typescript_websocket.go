@@ -117,6 +117,7 @@ func wsBaseName(meta WebSocketEndpointMeta, index int) string {
 func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []wsFuncMeta) (string, error) {
 	var b strings.Builder
 
+	writeTSBanner(&b, "Nuxt Gin WebSocket Client")
 	b.WriteString("const isPlainObject = (value: unknown): value is Record<string, unknown> =>\n")
 	b.WriteString("  Object.prototype.toString.call(value) === '[object Object]';\n\n")
 	b.WriteString("const isoDateLike = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+\\-]\\d{2}:\\d{2})$/;\n\n")
