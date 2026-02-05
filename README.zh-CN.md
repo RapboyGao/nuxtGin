@@ -1,151 +1,96 @@
-# Nuxt Gin Go Module
+# nuxtGin
 
-这个模块是一个功能强大的集成包，专为 <mcurl name="Nuxt Gin Starter" url="https://github.com/RapboyGao/nuxt-gin-starter.git"></mcurl> 项目设计，提供核心功能支持。它无缝结合了 Nuxt 前端框架和 Gin 后端框架，为全栈开发提供了便捷的解决方案。
+一个 Go 模块，用于将 Gin 与 Nuxt 结合：生产环境提供静态文件，开发环境反向代理 Nuxt，同时提供类型化 HTTP Endpoint 与 TS axios 客户端生成。
 
-## 项目介绍
+## 你能得到什么
 
-该模块是 Nuxt Gin Starter 项目的核心组件，提供了配置管理、Gin 模式设置和 Vue 服务渲染等关键功能。通过这个模块，可以快速搭建前后端分离的应用架构，同时兼顾开发效率和运行性能。
+- Gin 运行模式自动判断（开发/生产）
+- Nuxt 服务（静态/代理）
+- 类型化 HTTP Endpoint + TS 客户端生成
+- 常用工具函数
 
-## 技术栈
-
-- **后端**: Go 1.24.3, Gin 1.10.1
-- **前端**: Nuxt.js (通过反向代理或静态文件服务)
-- **依赖管理**: Go Modules
-- **其他工具**: github.com/json-iterator/go (高性能 JSON 处理), github.com/arduino/go-paths-helper (文件路径操作)
-
-## 项目结构
-
-```plaintext
-├── .gitignore
-├── .vscode/
-│   └── settings.json
-├── GetConfig.go      # 配置管理
-├── GetGinMode.go     # 配置Gin运行模式
-├── LICENSE
-├── ServeVue.go       # Vue服务渲染
-├── go.mod            # Go依赖管理
-└── utils/            # 工具函数
-    ├── Framework.Directory.go
-    ├── Framework.Excelize.go
-    ├── Framework.IPAddress.go
-    ├── Framework.MapStructure.go
-    ├── Framework.MultipleFiles.go
-    ├── Framework.Percentage.go
-    └── Framework.Regex.go
-```
-
-## 核心功能
-
-### 1. 配置管理 (Getconfig.go)
-
-提供了统一的配置加载和管理机制，从`server.config.json`文件读取配置，并支持自动解析到结构体中。
-
-```go:/Users/gaoxiaoyi/Documents/nuxt-gin-go-module/Getconfig.go
-// 配置结构体示例
-type Config struct {
-    GinPort  int    `json:"ginPort"`  // Gin服务器端口
-    NuxtPort int    `json:"nuxtPort"` // Nuxt应用端口
-    BaseUrl  string `json:"baseUrl"`  // 应用基础URL
-}
-
-// 全局配置实例
-get GetConfig Config = func() Config {
-    config := Config{}
-    config.Acquire()
-    return config
-}()
-```
-
-### 2. Gin 模式设置 (GetGinMode.go)
-
-根据项目目录结构自动切换 Gin 的运行模式：
-
-- 当`node_modules`目录存在时，启用开发模式(DebugMode)
-- 当`node_modules`目录不存在时，启用生产模式(ReleaseMode)
-
-```go:/Users/gaoxiaoyi/Documents/nuxt-gin-go-module/GetGinMode.go
-func ConfigureGinMode() {
-    path := paths.New("node_modules")
-    path.ToAbs()
-
-    if path.IsDir() {
-        fmt.Println("/node_modules found: using gin.DebugMode")
-    } else {
-        fmt.Println("/node_modules not found: using gin.ReleaseMode")
-        gin.SetMode(gin.ReleaseMode)
-    }
-}
-```
-
-### 3. Vue 服务渲染 (ServeVue.go)
-
-根据 Gin 运行模式提供不同的 Vue 服务方式：
-
-- 开发模式：通过反向代理连接到 Nuxt 开发服务器
-- 生产模式：直接提供静态文件服务
-
-```go:/Users/gaoxiaoyi/Documents/nuxt-gin-go-module/ServeVue.go
-func ServeVue(engine *gin.Engine) {
-    // 根路径重定向到应用基础URL
-    engine.GET("", func(ctx *gin.Context) {
-        ctx.Redirect(http.StatusPermanentRedirect, GetConfig.BaseUrl)
-    })
-
-    if gin.Mode() == gin.ReleaseMode {
-        ServeVueProduction(engine)
-    } else {
-        ServeVueDevelopment(engine)
-    }
-}
-```
-
-### 4. 工具函数库 (utils/)
-
-提供了多种实用工具函数，包括目录操作、Excel 处理、IP 地址处理、数据结构转换等。
-
-## 使用方法
-
-### 安装依赖
+## 安装
 
 ```bash
-cd /Users/gaoxiaoyi/Documents/nuxt-gin-go-module
-# 设置Go代理(如果需要)
-export GOPROXY="https://goproxy.io,direct"
-# 安装依赖
-go mod tidy
+go get github.com/RapboyGao/nuxtGin
 ```
 
-### 集成到项目中
+## 快速开始
 
 ```go
-// 导入模块
+package main
+
 import (
-    "github.com/RapboyGao/nuxt-gin-go-module"
-    "github.com/gin-gonic/gin"
+    "github.com/RapboyGao/nuxtGin"
+    "github.com/RapboyGao/nuxtGin/endpoint"
 )
 
 func main() {
-    // 配置Gin模式
-    nuxtGin.ConfigureGinMode()
-
-    // 创建Gin引擎
-    engine := gin.Default()
-
-    // 配置Vue服务
-    nuxtGin.ServeVue(engine)
-
-    // 启动服务
-    engine.Run(fmt.Sprintf(":%d", nuxtGin.GetConfig.GinPort))
+    endpoints := []endpoint.EndpointLike{}
+    nuxtGin.MustRunServer(endpoints)
 }
 ```
 
-## 注意事项
+## 配置
 
-1. 确保在项目根目录下创建`server.config.json`文件，配置必要的参数
-2. 开发模式下，需要确保 Nuxt 开发服务器正在运行
-3. 生产模式下，确保 Vue 静态文件已正确打包到指定目录
-4. 如需修改依赖项，请使用`go get`命令更新`go.mod`文件
+在项目根目录创建 `server.config.json`：
+
+```json
+{
+  "ginPort": 8080,
+  "nuxtPort": 3000,
+  "baseUrl": "/"
+}
+```
+
+## HTTP Endpoint + TS 客户端
+
+定义 Endpoint，并在 `ApplyEndpoints` 时生成 TS：
+
+```go
+api := []endpoint.EndpointLike{
+    endpoint.Endpoint[endpoint.NoParams, endpoint.NoParams, endpoint.NoParams, endpoint.NoParams, endpoint.NoBody, struct{ Ok bool }]{
+        Name:   "Ping",
+        Method: endpoint.HTTPMethodGet,
+        Path:   "/ping",
+        HandlerFunc: func(_ endpoint.NoParams, _ endpoint.NoParams, _ endpoint.NoParams, _ endpoint.NoParams, _ endpoint.NoBody, _ *gin.Context) (endpoint.Response[struct{ Ok bool }], error) {
+            return endpoint.Response[struct{ Ok bool }]{Body: struct{ Ok bool }{Ok: true}}, nil
+        },
+    },
+}
+
+engine := gin.Default()
+endpoint.ApplyEndpoints(engine, api)
+```
+
+需要完全掌控 Gin 行为时，用 `CustomEndpoint`：
+
+```go
+endpoint.CustomEndpoint[endpoint.NoParams, endpoint.NoParams, endpoint.NoParams, endpoint.NoParams, endpoint.NoBody, endpoint.NoBody]{
+    Name:        "Raw",
+    Method:      endpoint.HTTPMethodGet,
+    Path:        "/raw",
+    HandlerFunc: func(ctx *gin.Context) { ctx.String(200, "ok") },
+}
+```
+
+## 项目结构
+
+```text
+ServeVue.go            # Nuxt 服务（静态/代理）
+getConfig.go           # server.config.json 读取
+getGinMode.go          # 开发/生产判断
+Server.go              # CreateServer/RunServer 封装
+endpoint/              # Endpoint + TS 生成
+utils/                 # 工具函数
+```
+
+## 说明
+
+- 根目录存在 `node_modules` 时使用开发模式。
+- TS 输出默认路径：`vue/composables/auto-generated-api.ts`。
+- 模板项目：[Nuxt Gin Starter](https://github.com/RapboyGao/nuxt-gin-starter)
 
 ## 许可证
 
-本项目使用 MIT 许可证
+MIT
