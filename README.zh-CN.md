@@ -95,10 +95,10 @@ endpoint.CustomEndpoint[endpoint.NoParams, endpoint.NoParams, endpoint.NoParams,
 ## 项目结构
 
 ```text
-ServeVue.go            # Nuxt 服务（静态/代理）
-getConfig.go           # server.config.json 读取
-getGinMode.go          # 开发/生产判断
-Server.go              # CreateServer/RunServer 封装
+serve_vue.go           # Nuxt 服务（静态/代理）
+config.go              # server.config.json 读取
+gin_mode.go            # 开发/生产判断
+server.go              # CreateServer/RunServer 封装
 endpoint/              # Endpoint + TS 生成
 utils/                 # 工具函数
 ```

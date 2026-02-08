@@ -96,10 +96,10 @@ endpoint.CustomEndpoint[endpoint.NoParams, endpoint.NoParams, endpoint.NoParams,
 ## Project Layout
 
 ```text
-ServeVue.go            # Nuxt serving (static/proxy)
-getConfig.go           # server.config.json loader
-getGinMode.go          # dev/prod detection
-Server.go              # CreateServer/RunServer helpers
+serve_vue.go           # Nuxt serving (static/proxy)
+config.go              # server.config.json loader
+gin_mode.go            # dev/prod detection
+server.go              # CreateServer/RunServer helpers
 endpoint/              # Endpoint + TS generator
 utils/                 # Utility helpers
 ```
