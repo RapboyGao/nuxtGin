@@ -18,6 +18,10 @@ import (
  * - API 路由注册（并导出 TS）
  */
 func CreateServer(endpoints []endpoint.EndpointLike) (*gin.Engine, error) {
+	if GetGinMode() == gin.DebugMode {
+		setupGinDebugPrinter()
+	}
+
 	// 创建默认 Gin 引擎，包含日志和恢复中间件
 	engine := gin.Default()
 
@@ -47,6 +51,10 @@ func CreateServer(endpoints []endpoint.EndpointLike) (*gin.Engine, error) {
  * - WebSocket 路由注册（并导出 TS）
  */
 func CreateServerWithWebSockets(endpoints []endpoint.EndpointLike, wsEndpoints []endpoint.WebSocketEndpointLike) (*gin.Engine, error) {
+	if GetGinMode() == gin.DebugMode {
+		setupGinDebugPrinter()
+	}
+
 	// 创建默认 Gin 引擎，包含日志和恢复中间件
 	engine := gin.Default()
 

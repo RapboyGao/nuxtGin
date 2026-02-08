@@ -56,9 +56,9 @@ func serverURLs(https bool, port int, includeLocalhost bool) []string {
 // It takes a boolean indicating whether to use HTTPS and an integer for the port.
 func LogServer(https bool, port int) {
 	ensureColorOutput()
-	fmt.Println("Server available:")
+	Print("Server available:")
 	for _, href := range serverURLs(https, port, true) {
-		color.New(color.FgGreen, color.BgBlue).Println(href)
+		Print(color.New(color.FgGreen, color.BgBlue).Sprint(href))
 	}
 }
 
@@ -68,12 +68,12 @@ func LogServerWithQR(https bool, port int, includeLocalhost bool) {
 	ensureColorOutput()
 	urls := serverURLs(https, port, includeLocalhost)
 	if len(urls) == 0 {
-		fmt.Println("Server available: none")
+		Print("Server available: none")
 		return
 	}
-	fmt.Println("Server available:")
+	Print("Server available:")
 	for _, href := range urls {
-		color.New(color.FgGreen, color.BgBlue).Println(href)
+		Print(color.New(color.FgGreen, color.BgBlue).Sprint(href))
 	}
 
 	qrURL := urls[0]
@@ -84,7 +84,7 @@ func LogServerWithQR(https bool, port int, includeLocalhost bool) {
 		qrURL = href
 		break
 	}
-	fmt.Println("Scan QR to open:")
+	Print("Scan QR to open:")
 	qrTerminal.GenerateHalfBlock(qrURL, qrTerminal.M, os.Stdout)
 }
 
