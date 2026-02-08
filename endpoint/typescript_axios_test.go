@@ -120,7 +120,10 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	if !strings.Contains(code, "normalizeParamKeys") {
 		t.Fatalf("expected param key normalization helper")
 	}
-	if !strings.Contains(code, "normalizedParams.query") || !strings.Contains(code, "normalizedParams.header") || !strings.Contains(code, "normalizedParams.cookie") {
+	hasQuery := strings.Contains(code, "normalizedParams.query")
+	hasHeader := strings.Contains(code, "normalizedParams.header") || strings.Contains(code, "normalizedParams?.header")
+	hasCookie := strings.Contains(code, "normalizedParams.cookie") || strings.Contains(code, "normalizedParams?.cookie")
+	if !hasQuery || !hasHeader || !hasCookie {
 		t.Fatalf("expected normalized params usage for query/header/cookie")
 	}
 	if !strings.Contains(code, "export interface GetPersonReq") {
