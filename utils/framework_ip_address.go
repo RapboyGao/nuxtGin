@@ -20,17 +20,40 @@ const (
 	ServerLogStyleNeon ServerLogStyle = "neon"
 	// ServerLogStyleSunset uses a warm orange/yellow palette.
 	ServerLogStyleSunset ServerLogStyle = "sunset"
+	// ServerLogStyleOcean uses cool blue/cyan tones.
+	ServerLogStyleOcean ServerLogStyle = "ocean"
+	// ServerLogStyleForest uses green/yellow tones.
+	ServerLogStyleForest ServerLogStyle = "forest"
+	// ServerLogStyleMono uses grayscale output.
+	ServerLogStyleMono ServerLogStyle = "mono"
 )
 
-var currentServerLogStyle = ServerLogStyleNeon
+var currentServerLogStyle = ServerLogStyleOcean
 
 // SetServerLogStyle changes LogServer output color theme.
 func SetServerLogStyle(style ServerLogStyle) {
 	switch style {
 	case ServerLogStyleSunset:
 		currentServerLogStyle = ServerLogStyleSunset
+	case ServerLogStyleOcean:
+		currentServerLogStyle = ServerLogStyleOcean
+	case ServerLogStyleForest:
+		currentServerLogStyle = ServerLogStyleForest
+	case ServerLogStyleMono:
+		currentServerLogStyle = ServerLogStyleMono
 	default:
 		currentServerLogStyle = ServerLogStyleNeon
+	}
+}
+
+// ServerLogStyles returns all available styles.
+func ServerLogStyles() []ServerLogStyle {
+	return []ServerLogStyle{
+		ServerLogStyleNeon,
+		ServerLogStyleSunset,
+		ServerLogStyleOcean,
+		ServerLogStyleForest,
+		ServerLogStyleMono,
 	}
 }
 
@@ -130,13 +153,13 @@ func printServerURLs(urls []string, withQRHint bool) {
 	}
 
 	if localURL == "" {
-		fmt.Println(localLabel + hintColor.Sprint("none"))
+		Print(localLabel + hintColor.Sprint("none"))
 	} else {
-		fmt.Println(localLabel + urlColor.Sprint(localURL))
+		Print(localLabel + urlColor.Sprint(localURL))
 	}
 
 	if len(networkURLs) == 0 {
-		fmt.Println(networkLabel + hintColor.Sprint("none"))
+		Print(networkLabel + hintColor.Sprint("none"))
 		return
 	}
 	for i, href := range networkURLs {
@@ -144,7 +167,7 @@ func printServerURLs(urls []string, withQRHint bool) {
 		if withQRHint && i == 0 {
 			line += hintColor.Sprint(" [QR code]")
 		}
-		fmt.Println(line)
+		Print(line)
 	}
 }
 
@@ -154,6 +177,21 @@ func serverLogPalette() (localLabel string, networkLabel string, urlColor *color
 		return color.New(color.FgHiYellow).Sprint("➜ Local:   "),
 			color.New(color.FgHiRed).Sprint("➜ Network: "),
 			color.New(color.FgHiWhite),
+			color.New(color.FgHiBlack)
+	case ServerLogStyleOcean:
+		return color.New(color.FgHiCyan).Sprint("➜ Local:   "),
+			color.New(color.FgBlue).Sprint("➜ Network: "),
+			color.New(color.FgHiBlue),
+			color.New(color.FgHiBlack)
+	case ServerLogStyleForest:
+		return color.New(color.FgGreen).Sprint("➜ Local:   "),
+			color.New(color.FgHiGreen).Sprint("➜ Network: "),
+			color.New(color.FgHiYellow),
+			color.New(color.FgHiBlack)
+	case ServerLogStyleMono:
+		return color.New(color.FgWhite).Sprint("➜ Local:   "),
+			color.New(color.FgHiBlack).Sprint("➜ Network: "),
+			color.New(color.FgWhite),
 			color.New(color.FgHiBlack)
 	default:
 		return color.New(color.FgHiGreen).Sprint("➜ Local:   "),

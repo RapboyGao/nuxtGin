@@ -1,9 +1,9 @@
 package nuxtGin
 
 import (
+	"github.com/RapboyGao/nuxtGin/utils"
 	"github.com/arduino/go-paths-helper" // 文件路径操作工具
-	"github.com/fatih/color"
-	"github.com/gin-gonic/gin" // Gin Web框架
+	"github.com/gin-gonic/gin"           // Gin Web框架
 )
 
 /**
@@ -50,9 +50,9 @@ func ConfigureGinMode() {
 
 	// 开发环境：存在node_modules目录，使用调试模式
 	if mode == gin.DebugMode {
-		color.New(color.FgGreen).Println("gin mode: Debug")
+		utils.Print("Gin mode: Debug (development) / Gin模式：调试（开发环境）")
 	} else {
 		// 生产环境：不存在node_modules目录，使用生产模式
-		color.New(color.FgGreen).Println("gin mode: Release")
+		utils.Print("Gin mode: Release (production) / Gin模式：发布（生产环境）")
 	}
 }
