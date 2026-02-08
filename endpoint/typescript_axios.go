@@ -675,11 +675,30 @@ func renderStructBodyByType(t reflect.Type, registry *tsInterfaceRegistry) (stri
 		if optional {
 			propName += "?"
 		}
+		if tsdoc := strings.TrimSpace(f.Tag.Get("tsdoc")); tsdoc != "" {
+			lines = append(lines, renderTSFieldComment(tsdoc))
+		}
 		lines = append(lines, fmt.Sprintf("  %s: %s%s\n", propName, fieldType, separator))
 		sigs = append(sigs, name+fmt.Sprintf("(%t):", optional)+fieldSig)
 	}
 	sort.Strings(sigs)
 	return strings.Join(lines, ""), "{" + strings.Join(sigs, ";") + "}", nil
+}
+
+func renderTSFieldComment(comment string) string {
+	lines := strings.Split(escapeTSComment(comment), "\n")
+	if len(lines) == 1 {
+		return fmt.Sprintf("  /** %s */\n", strings.TrimSpace(lines[0]))
+	}
+	var b strings.Builder
+	b.WriteString("  /**\n")
+	for _, line := range lines {
+		b.WriteString("   * ")
+		b.WriteString(strings.TrimSpace(line))
+		b.WriteString("\n")
+	}
+	b.WriteString("   */\n")
+	return b.String()
 }
 
 func renderMapBody(v reflect.Value, registry *tsInterfaceRegistry) (string, string, error) {

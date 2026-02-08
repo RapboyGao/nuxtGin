@@ -64,6 +64,24 @@ engine := gin.Default()
 endpoint.ApplyEndpoints(engine, api)
 ```
 
+### Add Field Comments To Generated TS (`tsdoc`)
+
+`Go` source comments (`// ...`) are not available via reflection at runtime, so use struct tags:
+
+```go
+type User struct {
+    ID   string `json:"id" tsdoc:"Unique user id / 用户唯一标识"`
+    Name string `json:"name" tsdoc:"Display name / 显示名称"`
+}
+```
+
+The generated TypeScript interface will include field comments, for example:
+
+```ts
+/** Unique user id / 用户唯一标识 */
+id: string;
+```
+
 If you need full control of Gin behavior, use `CustomEndpoint`:
 
 ```go

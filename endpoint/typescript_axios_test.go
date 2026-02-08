@@ -15,7 +15,7 @@ type PathByID struct {
 }
 
 type GetPersonReq struct {
-	PersonID string  `json:"personID"`
+	PersonID string  `json:"personID" tsdoc:"人员ID / Person identifier"`
 	TraceID  *string `json:"traceID,omitempty"`
 }
 
@@ -125,6 +125,9 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	}
 	if !strings.Contains(code, "export interface GetPersonReq") {
 		t.Fatalf("expected request interface generation")
+	}
+	if !strings.Contains(code, "/** 人员ID / Person identifier */") {
+		t.Fatalf("expected tsdoc comment generation")
 	}
 	if !strings.Contains(code, "traceID?: string;") {
 		t.Fatalf("expected omitempty field to become optional")

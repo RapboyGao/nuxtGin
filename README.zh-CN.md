@@ -63,6 +63,24 @@ engine := gin.Default()
 endpoint.ApplyEndpoints(engine, api)
 ```
 
+### 在生成 TS 字段上加注释（`tsdoc`）
+
+`Go` 源码里的普通注释（`// ...`）运行时反射拿不到，请使用 struct tag：
+
+```go
+type User struct {
+    ID   string `json:"id" tsdoc:"唯一用户ID / Unique user id"`
+    Name string `json:"name" tsdoc:"显示名称 / Display name"`
+}
+```
+
+生成的 TypeScript interface 会带字段注释，例如：
+
+```ts
+/** 唯一用户ID / Unique user id */
+id: string;
+```
+
 需要完全掌控 Gin 行为时，用 `CustomEndpoint`：
 
 ```go
