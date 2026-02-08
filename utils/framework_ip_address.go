@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"sort"
@@ -135,8 +136,8 @@ func LogServerWithQRAndBasePath(https bool, port int, includeLocalhost bool, bas
 		qrURL = href
 		break
 	}
-	fmt.Println(color.New(color.FgHiBlack).Sprint("Scan QR to open:"))
-	qrTerminal.GenerateHalfBlock(qrURL, qrTerminal.M, os.Stdout)
+	Print(color.New(color.FgHiBlack).Sprint("Scan QR to open / 扫码访问："))
+	renderQRCode(qrURL)
 }
 
 func printServerURLs(urls []string, withQRHint bool) {
@@ -174,28 +175,28 @@ func printServerURLs(urls []string, withQRHint bool) {
 func serverLogPalette() (localLabel string, networkLabel string, urlColor *color.Color, hintColor *color.Color) {
 	switch currentServerLogStyle {
 	case ServerLogStyleSunset:
-		return color.New(color.FgHiYellow).Sprint("➜ Local:   "),
-			color.New(color.FgHiRed).Sprint("➜ Network: "),
+		return color.New(color.FgHiYellow).Sprint("➜ Local 本地:    "),
+			color.New(color.FgHiRed).Sprint("➜ Network 局域网: "),
 			color.New(color.FgHiWhite),
 			color.New(color.FgHiBlack)
 	case ServerLogStyleOcean:
-		return color.New(color.FgHiCyan).Sprint("➜ Local:   "),
-			color.New(color.FgBlue).Sprint("➜ Network: "),
+		return color.New(color.FgHiCyan).Sprint("➜ Local 本地:    "),
+			color.New(color.FgBlue).Sprint("➜ Network 局域网: "),
 			color.New(color.FgHiBlue),
 			color.New(color.FgHiBlack)
 	case ServerLogStyleForest:
-		return color.New(color.FgGreen).Sprint("➜ Local:   "),
-			color.New(color.FgHiGreen).Sprint("➜ Network: "),
+		return color.New(color.FgGreen).Sprint("➜ Local 本地:    "),
+			color.New(color.FgHiGreen).Sprint("➜ Network 局域网: "),
 			color.New(color.FgHiYellow),
 			color.New(color.FgHiBlack)
 	case ServerLogStyleMono:
-		return color.New(color.FgWhite).Sprint("➜ Local:   "),
-			color.New(color.FgHiBlack).Sprint("➜ Network: "),
+		return color.New(color.FgWhite).Sprint("➜ Local 本地:    "),
+			color.New(color.FgHiBlack).Sprint("➜ Network 局域网: "),
 			color.New(color.FgWhite),
 			color.New(color.FgHiBlack)
 	default:
-		return color.New(color.FgHiGreen).Sprint("➜ Local:   "),
-			color.New(color.FgMagenta).Sprint("➜ Network: "),
+		return color.New(color.FgHiGreen).Sprint("➜ Local 本地:    "),
+			color.New(color.FgMagenta).Sprint("➜ Network 局域网: "),
 			color.New(color.FgHiCyan),
 			color.New(color.FgHiBlack)
 	}
@@ -220,4 +221,18 @@ func ensureColorOutput() {
 		color.Output = os.Stderr
 		color.NoColor = false
 	}
+}
+
+func renderQRCode(url string) {
+	out := qrOutputWriter()
+	_, _ = fmt.Fprintln(out)
+	qrTerminal.GenerateHalfBlock(url, qrTerminal.M, out)
+	_, _ = fmt.Fprintf(out, "\n%s\n", url)
+}
+
+func qrOutputWriter() io.Writer {
+	if color.Output == os.Stderr {
+		return os.Stderr
+	}
+	return os.Stdout
 }
