@@ -13,12 +13,12 @@ var setupGinDebugPrinterOnce sync.Once
 
 func setupGinDebugPrinter() {
 	setupGinDebugPrinterOnce.Do(func() {
-		blueTag := color.New(color.FgBlue).Sprint("[GIN-debug]")
+		greenTag := color.New(color.FgGreen).Sprint("[GIN-debug]")
 		yellowWarn := color.New(color.FgYellow).Sprint("[GIN-Warning]")
 		redError := color.New(color.FgRed).Sprint("[GIN-Error]")
 		gin.DebugPrintFunc = func(format string, values ...any) {
 			out := fmt.Sprintf(format, values...)
-			out = strings.ReplaceAll(out, "[GIN-debug]", blueTag)
+			out = strings.ReplaceAll(out, "[GIN-debug]", greenTag)
 			out = strings.ReplaceAll(out, "[WARNING]", yellowWarn)
 			out = strings.ReplaceAll(out, "[ERROR]", redError)
 			fmt.Print(out)

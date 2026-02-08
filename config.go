@@ -42,5 +42,5 @@ var GetConfig Config = func() Config {
 }()
 
 func LogServer() {
-	utils.LogServer(false, GetConfig.GinPort)
+	utils.LogServerWithBasePath(false, GetConfig.GinPort, GetConfig.BaseUrl)
 }

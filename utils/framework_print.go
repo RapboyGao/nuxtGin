@@ -6,9 +6,9 @@ import (
 	"github.com/fatih/color"
 )
 
-var goLogPrefix = color.New(color.FgBlue).Sprint("[go]")
+var goLogPrefix = color.New(color.FgGreen).Sprint("[go]")
 
-// Print prints a single log line with a blue [go] prefix.
+// Print prints a single log line with a green [go] prefix.
 func Print(v ...any) {
 	if len(v) == 0 {
 		fmt.Println(goLogPrefix)
@@ -18,7 +18,7 @@ func Print(v ...any) {
 	fmt.Println(values...)
 }
 
-// PrintMulti prints multiple lines, each prefixed with a blue [go] tag.
+// PrintMulti prints multiple lines, each prefixed with a green [go] tag.
 func PrintMulti(lines ...string) {
 	for _, line := range lines {
 		Print(line)

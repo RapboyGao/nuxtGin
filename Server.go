@@ -22,8 +22,8 @@ func CreateServer(endpoints []endpoint.EndpointLike) (*gin.Engine, error) {
 		setupGinDebugPrinter()
 	}
 
-	// 创建默认 Gin 引擎，包含日志和恢复中间件
-	engine := gin.Default()
+	// 创建 Gin 引擎，包含自定义日志格式和恢复中间件
+	engine := newGinEngine()
 
 	// 启用 CORS 支持，使用默认配置
 	if GetGinMode() == gin.DebugMode {
@@ -55,8 +55,8 @@ func CreateServerWithWebSockets(endpoints []endpoint.EndpointLike, wsEndpoints [
 		setupGinDebugPrinter()
 	}
 
-	// 创建默认 Gin 引擎，包含日志和恢复中间件
-	engine := gin.Default()
+	// 创建 Gin 引擎，包含自定义日志格式和恢复中间件
+	engine := newGinEngine()
 
 	// 启用 CORS 支持，使用默认配置
 	if GetGinMode() == gin.DebugMode {

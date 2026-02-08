@@ -53,6 +53,6 @@ func ConfigureGinMode() {
 		color.New(color.FgGreen).Println("gin mode: Debug")
 	} else {
 		// 生产环境：不存在node_modules目录，使用生产模式
-		color.New(color.FgBlue).Println("gin mode: Release")
+		color.New(color.FgGreen).Println("gin mode: Release")
 	}
 }
