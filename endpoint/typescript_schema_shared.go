@@ -143,7 +143,7 @@ func renderStructBodyByType(t reflect.Type, registry *tsInterfaceRegistry) (stri
 			return "", "", err
 		} else if ok {
 			fieldType = tsUnionType(unionValues)
-			fieldSig = "union[" + strings.Join(unionValues, "|") + "]"
+			fieldSig = "union[" + tsUnionSig(unionValues) + "]"
 		}
 		separator := ";"
 		if isMultilineObjectType(fieldType) {
@@ -454,7 +454,12 @@ func jsonFieldMeta(f reflect.StructField) (string, bool, bool) {
 	return name, optional, true
 }
 
-func tsUnionValuesFromField(f reflect.StructField) ([]string, bool, error) {
+type tsUnionLiteral struct {
+	Type  string
+	Value string
+}
+
+func tsUnionValuesFromField(f reflect.StructField) ([]tsUnionLiteral, bool, error) {
 	raw := strings.TrimSpace(f.Tag.Get("tsunion"))
 	if raw == "" {
 		return nil, false, nil
@@ -463,27 +468,27 @@ func tsUnionValuesFromField(f reflect.StructField) ([]string, bool, error) {
 	for base.Kind() == reflect.Ptr {
 		base = base.Elem()
 	}
-	if base.Kind() != reflect.String {
-		return nil, false, fmt.Errorf("field %s: tsunion only supports string fields", f.Name)
-	}
-
 	parts := strings.Split(raw, ",")
 	if len(parts) == 1 {
 		parts = strings.Split(raw, "|")
 	}
-	values := make([]string, 0, len(parts))
+	values := make([]tsUnionLiteral, 0, len(parts))
 	seen := map[string]struct{}{}
 	for _, p := range parts {
 		v := strings.TrimSpace(p)
-		v = strings.Trim(v, `"'`)
 		if v == "" {
 			continue
 		}
-		if _, ok := seen[v]; ok {
+		literal, err := parseTSUnionLiteral(base, v)
+		if err != nil {
+			return nil, false, fmt.Errorf("field %s: %w", f.Name, err)
+		}
+		key := literal.Type + ":" + literal.Value
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		seen[v] = struct{}{}
-		values = append(values, v)
+		seen[key] = struct{}{}
+		values = append(values, literal)
 	}
 	if len(values) == 0 {
 		return nil, false, fmt.Errorf("field %s: tsunion is empty", f.Name)
@@ -491,20 +496,90 @@ func tsUnionValuesFromField(f reflect.StructField) ([]string, bool, error) {
 	return values, true, nil
 }
 
-func tsUnionType(values []string) string {
+func parseTSUnionLiteral(base reflect.Type, raw string) (tsUnionLiteral, error) {
+	switch base.Kind() {
+	case reflect.String:
+		v := strings.Trim(raw, `"'`)
+		if v == "" {
+			return tsUnionLiteral{}, fmt.Errorf("tsunion string literal is empty")
+		}
+		return tsUnionLiteral{Type: "string", Value: v}, nil
+	case reflect.Bool:
+		v := strings.ToLower(strings.TrimSpace(raw))
+		if v != "true" && v != "false" {
+			return tsUnionLiteral{}, fmt.Errorf("tsunion bool literal must be true or false")
+		}
+		return tsUnionLiteral{Type: "boolean", Value: v}, nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32:
+		n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil {
+			return tsUnionLiteral{}, fmt.Errorf("invalid integer literal %q", raw)
+		}
+		return tsUnionLiteral{Type: "number", Value: strconv.FormatInt(n, 10)}, nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32:
+		n, err := strconv.ParseUint(strings.TrimSpace(raw), 10, 64)
+		if err != nil {
+			return tsUnionLiteral{}, fmt.Errorf("invalid unsigned integer literal %q", raw)
+		}
+		return tsUnionLiteral{Type: "number", Value: strconv.FormatUint(n, 10)}, nil
+	case reflect.Float32, reflect.Float64:
+		n, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+		if err != nil {
+			return tsUnionLiteral{}, fmt.Errorf("invalid float literal %q", raw)
+		}
+		return tsUnionLiteral{Type: "number", Value: strconv.FormatFloat(n, 'f', -1, 64)}, nil
+	default:
+		return tsUnionLiteral{}, fmt.Errorf("tsunion supports string, bool, int/uint, float fields only")
+	}
+}
+
+func tsUnionType(values []tsUnionLiteral) string {
 	parts := make([]string, 0, len(values))
 	for _, v := range values {
-		parts = append(parts, "'"+strings.ReplaceAll(v, "'", "\\'")+"'")
+		switch v.Type {
+		case "string":
+			parts = append(parts, "'"+strings.ReplaceAll(v.Value, "'", "\\'")+"'")
+		default:
+			parts = append(parts, v.Value)
+		}
 	}
 	return strings.Join(parts, " | ")
 }
 
-func tsUnionValidatorExpr(valueExpr string, values []string) string {
+func tsUnionSig(values []tsUnionLiteral) string {
 	parts := make([]string, 0, len(values))
 	for _, v := range values {
-		parts = append(parts, valueExpr+" === '"+strings.ReplaceAll(v, "'", "\\'")+"'")
+		parts = append(parts, v.Type+":"+v.Value)
 	}
-	return "typeof " + valueExpr + " === 'string' && (" + strings.Join(parts, " || ") + ")"
+	return strings.Join(parts, "|")
+}
+
+func tsUnionValidatorExpr(valueExpr string, values []tsUnionLiteral) string {
+	if len(values) == 0 {
+		return "false"
+	}
+	typeofName := values[0].Type
+	for _, v := range values {
+		if v.Type != typeofName {
+			return "false"
+		}
+	}
+	tsTypeOf := "string"
+	switch typeofName {
+	case "number":
+		tsTypeOf = "number"
+	case "boolean":
+		tsTypeOf = "boolean"
+	}
+	parts := make([]string, 0, len(values))
+	for _, v := range values {
+		if v.Type == "string" {
+			parts = append(parts, valueExpr+" === '"+strings.ReplaceAll(v.Value, "'", "\\'")+"'")
+			continue
+		}
+		parts = append(parts, valueExpr+" === "+v.Value)
+	}
+	return "typeof " + valueExpr + " === '" + tsTypeOf + "' && (" + strings.Join(parts, " || ") + ")"
 }
 
 var tsIdentifierRegexp = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)

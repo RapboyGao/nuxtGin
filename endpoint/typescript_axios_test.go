@@ -15,9 +15,11 @@ type PathByID struct {
 }
 
 type GetPersonReq struct {
-	PersonID string  `json:"personID" tsdoc:"人员ID / Person identifier"`
-	Level    string  `json:"level" tsunion:"warning,success,error" tsdoc:"消息等级 / Message level"`
-	TraceID  *string `json:"traceID,omitempty"`
+	PersonID    string  `json:"personID" tsdoc:"人员ID / Person identifier"`
+	Level       string  `json:"level" tsunion:"warning,success,error" tsdoc:"消息等级 / Message level"`
+	RetryAfter  int     `json:"retryAfter" tsunion:"0,5,30" tsdoc:"重试时间(秒) / Retry delay in seconds"`
+	CanFallback bool    `json:"canFallback" tsunion:"true,false" tsdoc:"是否允许降级 / Whether fallback is allowed"`
+	TraceID     *string `json:"traceID,omitempty"`
 }
 
 type ResumeItem struct {
@@ -147,6 +149,18 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	}
 	if !strings.Contains(code, "typeof obj[\"level\"] === 'string' && (obj[\"level\"] === 'warning' || obj[\"level\"] === 'success' || obj[\"level\"] === 'error')") {
 		t.Fatalf("expected tsunion validator generation")
+	}
+	if !strings.Contains(code, "retryAfter: 0 | 5 | 30;") {
+		t.Fatalf("expected numeric tsunion field generation")
+	}
+	if !strings.Contains(code, "typeof obj[\"retryAfter\"] === 'number' && (obj[\"retryAfter\"] === 0 || obj[\"retryAfter\"] === 5 || obj[\"retryAfter\"] === 30)") {
+		t.Fatalf("expected numeric tsunion validator generation")
+	}
+	if !strings.Contains(code, "canFallback: true | false;") {
+		t.Fatalf("expected boolean tsunion field generation")
+	}
+	if !strings.Contains(code, "typeof obj[\"canFallback\"] === 'boolean' && (obj[\"canFallback\"] === true || obj[\"canFallback\"] === false)") {
+		t.Fatalf("expected boolean tsunion validator generation")
 	}
 	if !strings.Contains(code, "salary: string;") {
 		t.Fatalf("expected int64 to map to string")

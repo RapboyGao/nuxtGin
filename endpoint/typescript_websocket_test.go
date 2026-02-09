@@ -47,6 +47,7 @@ type wsServerBroadcastPayload struct {
 	FromClientID string `json:"fromClientID" tsdoc:"发送者客户端ID / Sender client identifier"`
 	RoomID       string `json:"roomID" tsdoc:"房间ID / Room identifier"`
 	Level        string `json:"level" tsunion:"warning,success,error" tsdoc:"消息等级 / Message level"`
+	Priority     int    `json:"priority" tsunion:"1,2,3" tsdoc:"优先级 / Priority"`
 	Text         string `json:"text" tsdoc:"广播文本 / Broadcast text"`
 }
 
@@ -84,6 +85,12 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	}
 	if !strings.Contains(code, "typeof obj[\"level\"] === 'string' && (obj[\"level\"] === 'warning' || obj[\"level\"] === 'success' || obj[\"level\"] === 'error')") {
 		t.Fatalf("expected websocket tsunion validator generation")
+	}
+	if !strings.Contains(code, "priority: 1 | 2 | 3;") {
+		t.Fatalf("expected websocket numeric tsunion field generation")
+	}
+	if !strings.Contains(code, "typeof obj[\"priority\"] === 'number' && (obj[\"priority\"] === 1 || obj[\"priority\"] === 2 || obj[\"priority\"] === 3)") {
+		t.Fatalf("expected websocket numeric tsunion validator generation")
 	}
 	if !strings.Contains(code, "export function ensureWsClientMessage(value: unknown): WsClientMessage {") {
 		t.Fatalf("expected websocket interface ensure function generation")
