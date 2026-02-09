@@ -7,13 +7,15 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
 type tsInterfaceDef struct {
-	Name string
-	Body string
-	Sig  string
+	Name      string
+	Body      string
+	Validator string
+	Sig       string
 }
 
 type tsInterfaceRegistry struct {
@@ -61,6 +63,10 @@ func (r *tsInterfaceRegistry) ensureNamedStructType(t reflect.Type) (string, err
 	if err != nil {
 		return "", err
 	}
+	validator, err := renderStructValidatorByType(t, r, name)
+	if err != nil {
+		return "", err
+	}
 	namedSig := "named:" + t.PkgPath() + "." + t.Name() + ":" + sig
 	if existing, ok := r.sigToName[namedSig]; ok {
 		r.typeToName[t] = existing
@@ -68,9 +74,10 @@ func (r *tsInterfaceRegistry) ensureNamedStructType(t reflect.Type) (string, err
 	}
 
 	r.defs = append(r.defs, tsInterfaceDef{
-		Name: name,
-		Body: body,
-		Sig:  namedSig,
+		Name:      name,
+		Body:      body,
+		Validator: validator,
+		Sig:       namedSig,
 	})
 	r.sigToName[namedSig] = name
 	return name, nil
@@ -330,6 +337,10 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 			b.WriteString(def.Body)
 		}
 		b.WriteString("}\n\n")
+		if strings.TrimSpace(def.Validator) != "" {
+			b.WriteString(def.Validator)
+			b.WriteString("\n")
+		}
 	}
 
 	for _, m := range metas {
@@ -683,6 +694,114 @@ func renderStructBodyByType(t reflect.Type, registry *tsInterfaceRegistry) (stri
 	}
 	sort.Strings(sigs)
 	return strings.Join(lines, ""), "{" + strings.Join(sigs, ";") + "}", nil
+}
+
+func renderStructValidatorByType(t reflect.Type, registry *tsInterfaceRegistry, interfaceName string) (string, error) {
+	var b strings.Builder
+	b.WriteString("export function validate")
+	b.WriteString(interfaceName)
+	b.WriteString("(value: unknown): value is ")
+	b.WriteString(interfaceName)
+	b.WriteString(" {\n")
+	b.WriteString("  if (!isPlainObject(value)) return false;\n")
+	b.WriteString("  const obj = value as Record<string, unknown>;\n")
+
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.PkgPath != "" {
+			continue
+		}
+		name, optional, ok := jsonFieldMeta(f)
+		if !ok {
+			continue
+		}
+		expr, err := tsValidatorExprFromType(f.Type, "obj["+strconv.Quote(name)+"]", registry, 0)
+		if err != nil {
+			return "", err
+		}
+		if optional {
+			b.WriteString("  if (obj[")
+			b.WriteString(strconv.Quote(name))
+			b.WriteString("] !== undefined && !(")
+			b.WriteString(expr)
+			b.WriteString(")) return false;\n")
+			continue
+		}
+		b.WriteString("  if (!( ")
+		b.WriteString(strconv.Quote(name))
+		b.WriteString(" in obj)) return false;\n")
+		b.WriteString("  if (!(")
+		b.WriteString(expr)
+		b.WriteString(")) return false;\n")
+	}
+	b.WriteString("  return true;\n")
+	b.WriteString("}\n")
+	return b.String(), nil
+}
+
+func tsValidatorExprFromType(t reflect.Type, valueExpr string, registry *tsInterfaceRegistry, depth int) (string, error) {
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	if t.PkgPath() == "time" && t.Name() == "Time" {
+		return "typeof " + valueExpr + " === 'string'", nil
+	}
+	if t.PkgPath() == "github.com/RapboyGao/nuxtGin/endpoint" && t.Name() == "FormData" {
+		return valueExpr + " instanceof FormData", nil
+	}
+	if t.PkgPath() == "github.com/RapboyGao/nuxtGin/endpoint" && t.Name() == "RawBytes" {
+		return valueExpr + " instanceof Uint8Array", nil
+	}
+	if t.PkgPath() == "github.com/RapboyGao/nuxtGin/endpoint" && t.Name() == "StreamResponse" {
+		return valueExpr + " instanceof Blob", nil
+	}
+
+	switch t.Kind() {
+	case reflect.Bool:
+		return "typeof " + valueExpr + " === 'boolean'", nil
+	case reflect.String:
+		return "typeof " + valueExpr + " === 'string'", nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32,
+		reflect.Float32, reflect.Float64:
+		return "typeof " + valueExpr + " === 'number'", nil
+	case reflect.Int64, reflect.Uint64:
+		return "typeof " + valueExpr + " === 'string'", nil
+	case reflect.Struct:
+		if t.Name() != "" {
+			name, err := registry.ensureNamedStructType(t)
+			if err != nil {
+				return "", err
+			}
+			return "validate" + name + "(" + valueExpr + ")", nil
+		}
+		return "isPlainObject(" + valueExpr + ")", nil
+	case reflect.Map:
+		if t.Key().Kind() != reflect.String {
+			return "isPlainObject(" + valueExpr + ")", nil
+		}
+		itemName := fmt.Sprintf("v%d", depth+1)
+		elemExpr, err := tsValidatorExprFromType(t.Elem(), itemName, registry, depth+1)
+		if err != nil {
+			return "", err
+		}
+		return "isPlainObject(" + valueExpr + ") && Object.values(" + valueExpr + ").every((" + itemName + ") => " + elemExpr + ")", nil
+	case reflect.Slice, reflect.Array:
+		if t.Elem().Kind() == reflect.Uint8 {
+			return "typeof " + valueExpr + " === 'string'", nil
+		}
+		itemName := fmt.Sprintf("v%d", depth+1)
+		elemExpr, err := tsValidatorExprFromType(t.Elem(), itemName, registry, depth+1)
+		if err != nil {
+			return "", err
+		}
+		return "Array.isArray(" + valueExpr + ") && " + valueExpr + ".every((" + itemName + ") => " + elemExpr + ")", nil
+	case reflect.Interface:
+		return "true", nil
+	default:
+		return "true", nil
+	}
 }
 
 func renderTSFieldComment(comment string) string {

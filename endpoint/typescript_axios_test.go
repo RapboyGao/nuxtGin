@@ -129,6 +129,12 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	if !strings.Contains(code, "export interface GetPersonReq") {
 		t.Fatalf("expected request interface generation")
 	}
+	if !strings.Contains(code, "export function validateGetPersonReq(value: unknown): value is GetPersonReq {") {
+		t.Fatalf("expected interface validator generation")
+	}
+	if !strings.Contains(code, "if (!( \"personID\" in obj)) return false;") {
+		t.Fatalf("expected required-field validation generation")
+	}
 	if !strings.Contains(code, "/** 人员ID / Person identifier */") {
 		t.Fatalf("expected tsdoc comment generation")
 	}
