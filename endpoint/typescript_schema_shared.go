@@ -16,6 +16,42 @@ type tsInterfaceDef struct {
 	Sig       string
 }
 
+type TSInt64Mode string
+
+const (
+	TSInt64ModeNumber TSInt64Mode = "number"
+	TSInt64ModeString TSInt64Mode = "string"
+)
+
+// TSInt64MappingMode controls how int64/uint64 are rendered in generated TypeScript.
+// Default is `number` because most HTTP JSON payloads from Go services encode these as JSON numbers.
+var TSInt64MappingMode = TSInt64ModeNumber
+
+// SetTSInt64MappingMode changes int64/uint64 mapping mode for TypeScript generation.
+// Unsupported values fallback to TSInt64ModeNumber.
+func SetTSInt64MappingMode(mode TSInt64Mode) {
+	switch mode {
+	case TSInt64ModeString:
+		TSInt64MappingMode = TSInt64ModeString
+	default:
+		TSInt64MappingMode = TSInt64ModeNumber
+	}
+}
+
+func tsInt64TypeAndSig() (string, string) {
+	if TSInt64MappingMode == TSInt64ModeString {
+		return "string", "int64_as_string"
+	}
+	return "number", "int64_as_number"
+}
+
+func tsInt64ValidatorExpr(valueExpr string) string {
+	if TSInt64MappingMode == TSInt64ModeString {
+		return "typeof " + valueExpr + " === 'string'"
+	}
+	return "typeof " + valueExpr + " === 'number'"
+}
+
 type tsInterfaceRegistry struct {
 	defs       []tsInterfaceDef
 	sigToName  map[string]string
@@ -160,7 +196,7 @@ func renderStructBodyByType(t reflect.Type, registry *tsInterfaceRegistry) (stri
 		sigs = append(sigs, name+fmt.Sprintf("(%t):", optional)+fieldSig)
 	}
 	sort.Strings(sigs)
-	return strings.Join(lines, ""), "{"+strings.Join(sigs, ";")+"}", nil
+	return strings.Join(lines, ""), "{" + strings.Join(sigs, ";") + "}", nil
 }
 
 func renderStructValidatorByType(t reflect.Type, registry *tsInterfaceRegistry, interfaceName string) (string, error) {
@@ -248,7 +284,7 @@ func tsValidatorExprFromType(t reflect.Type, valueExpr string, registry *tsInter
 		reflect.Float32, reflect.Float64:
 		return "typeof " + valueExpr + " === 'number'", nil
 	case reflect.Int64, reflect.Uint64:
-		return "typeof " + valueExpr + " === 'string'", nil
+		return tsInt64ValidatorExpr(valueExpr), nil
 	case reflect.Struct:
 		if t.Name() != "" {
 			name, err := registry.ensureNamedStructType(t)
@@ -399,7 +435,8 @@ func tsTypeFromType(t reflect.Type, registry *tsInterfaceRegistry) (string, stri
 		reflect.Float32, reflect.Float64:
 		return "number", "number", nil
 	case reflect.Int64, reflect.Uint64:
-		return "string", "int64_as_string", nil
+		tsType, sig := tsInt64TypeAndSig()
+		return tsType, sig, nil
 	case reflect.Struct:
 		if t.Name() != "" {
 			name, err := registry.ensureNamedStructType(t)

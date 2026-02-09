@@ -117,9 +117,9 @@ func generateAxiosFromEndpoints(baseURL string, endpoints []EndpointLike) (strin
 			APIDescription:   strings.TrimSpace(meta.Description),
 			RequestDesc:      strings.TrimSpace(meta.RequestDescription),
 			PathParamMap:     pathParamFieldMap(meta.PathParamsType),
-			QueryParamMap:    paramFieldMap(meta.QueryParamsType),
-			HeaderParamMap:   paramFieldMap(meta.HeaderParamsType),
-			CookieParamMap:   paramFieldMap(meta.CookieParamsType),
+			QueryParamMap:    queryParamFieldMap(meta.QueryParamsType),
+			HeaderParamMap:   headerParamFieldMap(meta.HeaderParamsType),
+			CookieParamMap:   cookieParamFieldMap(meta.CookieParamsType),
 			HasParams:        hasParams,
 			HasPath:          hasPath,
 			HasQuery:         hasQuery,
@@ -678,6 +678,22 @@ func buildTSURLExprWithBaseAndMap(baseURL string, path string, fieldMap map[stri
 }
 
 func pathParamFieldMap(t reflect.Type) map[string]string {
+	return paramFieldMapWithPrimaryTag(t, "uri")
+}
+
+func queryParamFieldMap(t reflect.Type) map[string]string {
+	return paramFieldMapWithPrimaryTag(t, "form")
+}
+
+func headerParamFieldMap(t reflect.Type) map[string]string {
+	return paramFieldMapWithPrimaryTag(t, "header")
+}
+
+func cookieParamFieldMap(t reflect.Type) map[string]string {
+	return paramFieldMapWithPrimaryTag(t, "cookie")
+}
+
+func paramFieldMapWithPrimaryTag(t reflect.Type, primaryTag string) map[string]string {
 	out := map[string]string{}
 	if t == nil || t.Kind() == reflect.Invalid {
 		return out
@@ -693,7 +709,7 @@ func pathParamFieldMap(t reflect.Type) map[string]string {
 		if f.PkgPath != "" {
 			continue
 		}
-		name, _, ok := jsonFieldMeta(f)
+		name, ok := resolveParamFieldName(f, primaryTag)
 		if !ok {
 			continue
 		}
@@ -711,7 +727,41 @@ func pathParamFieldMap(t reflect.Type) map[string]string {
 }
 
 func paramFieldMap(t reflect.Type) map[string]string {
-	return pathParamFieldMap(t)
+	return paramFieldMapWithPrimaryTag(t, "")
+}
+
+func resolveParamFieldName(f reflect.StructField, primaryTag string) (string, bool) {
+	if primaryTag != "" {
+		if name, ok, ignored := nameFromStructTag(f, primaryTag); ignored {
+			return "", false
+		} else if ok {
+			return name, true
+		}
+	}
+
+	if name, _, ok := jsonFieldMeta(f); ok {
+		return name, true
+	}
+
+	return f.Name, true
+}
+
+func nameFromStructTag(f reflect.StructField, tagKey string) (name string, found bool, ignored bool) {
+	if tagKey == "" {
+		return "", false, false
+	}
+	raw := f.Tag.Get(tagKey)
+	if raw == "" {
+		return "", false, false
+	}
+	if raw == "-" {
+		return "", true, true
+	}
+	name = strings.Split(raw, ",")[0]
+	if name == "" {
+		name = f.Name
+	}
+	return name, true, false
 }
 
 func renderParamMapObject(m map[string]string) string {

@@ -36,8 +36,8 @@ type PersonDetailResp struct {
 }
 
 type QueryParams struct {
-	Page     int `json:"Page" tsdoc:"页码 / Page index"`
-	PageSize int `json:"pageSize" tsdoc:"每页条数 / Page size"`
+	Page     int `form:"page" tsdoc:"页码 / Page index"`
+	PageSize int `form:"pageSize" tsdoc:"每页条数 / Page size"`
 }
 
 type HeaderParams struct {
@@ -192,11 +192,41 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	if !strings.Contains(code, "typeof obj[\"canFallback\"] ===") || !strings.Contains(code, "obj[\"canFallback\"] === true") {
 		t.Fatalf("expected boolean tsunion validator generation")
 	}
-	if !strings.Contains(code, "salary: string;") {
-		t.Fatalf("expected int64 to map to string")
+	if !strings.Contains(code, "salary: number;") {
+		t.Fatalf("expected int64 to map to number")
 	}
 	if !strings.Contains(code, "startDate: string;") {
 		t.Fatalf("expected time.Time to map to string")
+	}
+	if !strings.Contains(code, `query: { page: "page", pagesize: "pageSize" }`) {
+		t.Fatalf("expected query key map to use form tags")
+	}
+}
+
+func TestGenerateAxiosFromEndpoints_Int64AsStringMode(t *testing.T) {
+	oldMode := TSInt64MappingMode
+	SetTSInt64MappingMode(TSInt64ModeString)
+	t.Cleanup(func() {
+		SetTSInt64MappingMode(oldMode)
+	})
+
+	apis := []EndpointLike{
+		Endpoint[NoParams, NoParams, NoParams, NoParams, NoBody, PersonDetailResp]{
+			Name:   "int64_mode_check",
+			Method: HTTPMethodGet,
+			Path:   "/int64-mode",
+			HandlerFunc: func(_ NoParams, _ NoParams, _ NoParams, _ NoParams, _ NoBody, _ *gin.Context) (Response[PersonDetailResp], error) {
+				return Response[PersonDetailResp]{StatusCode: 200}, nil
+			},
+		},
+	}
+
+	code, err := GenerateAxiosFromEndpoints("/api", apis)
+	if err != nil {
+		t.Fatalf("GenerateAxiosFromEndpoints returned error: %v", err)
+	}
+	if !strings.Contains(code, "salary: string;") {
+		t.Fatalf("expected int64 to map to string when TSInt64ModeString is enabled")
 	}
 }
 
