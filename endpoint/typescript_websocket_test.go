@@ -55,6 +55,7 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 		Path:              "/chat/events",
 		ClientMessageType: reflect.TypeOf(wsClientMessage{}),
 		ServerMessageType: reflect.TypeOf(wsServerMessageEnvelope{}),
+		MessageTypes:      []string{"room:join", "chat:text", "system:ack"},
 	}
 
 	code, err := GenerateWebSocketClientFromEndpoints("/ws/v1", []WebSocketEndpointLike{ws})
@@ -77,16 +78,10 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "export function createWsClientMessage(value: unknown): WsClientMessage {") {
 		t.Fatalf("expected websocket interface factory generation")
 	}
-	if !strings.Contains(code, "export function onReceiveWsClientMessage<TReceive, TSend>(") {
-		t.Fatalf("expected websocket onReceive helper generation")
-	}
-	if !strings.Contains(code, "if (!validateWsClientMessage(raw)) return;") {
-		t.Fatalf("expected websocket onReceive helper validation")
-	}
 	if !strings.Contains(code, "if (!validateWsClientMessage(value)) {") {
 		t.Fatalf("expected websocket interface factory to validate before create")
 	}
-	if !strings.Contains(code, "onType(type: string, handler: (message: TReceive) => void, options?: TypeHandlerOptions<TReceive>): () => void") {
+	if !strings.Contains(code, "onType(type: TType, handler: (message: TReceive) => void, options?: TypeHandlerOptions<TReceive>): () => void") {
 		t.Fatalf("expected onType typed handler registration")
 	}
 	if !strings.Contains(code, "onTyped<TPayload>(") {
@@ -110,7 +105,10 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "export function chatEvents<TSend =") {
 		t.Fatalf("expected endpoint factory to allow custom send union types")
 	}
-	if !strings.Contains(code, "TypedWebSocketClient<WsServerMessageEnvelope, TSend>") {
+	if !strings.Contains(code, "export type ChatEventsMessageType = 'chat:text' | 'room:join' | 'system:ack';") {
+		t.Fatalf("expected message type union alias generation")
+	}
+	if !strings.Contains(code, "TypedWebSocketClient<WsServerMessageEnvelope, TSend, ChatEventsMessageType>") {
 		t.Fatalf("expected endpoint factory return type to use renamed server message type")
 	}
 	if !strings.Contains(code, "export function chatEvents<TSend =") {
@@ -152,6 +150,7 @@ func TestGenerateWebSocketClientFromEndpoints_ExportFile(t *testing.T) {
 		Path:              "/chat/events",
 		ClientMessageType: reflect.TypeOf(wsClientMessage{}),
 		ServerMessageType: reflect.TypeOf(wsServerMessageEnvelope{}),
+		MessageTypes:      []string{"room:join", "chat:text", "system:ack"},
 	}
 
 	outPath := filepath.Join(".generated", "schema", "ws_client.ts")

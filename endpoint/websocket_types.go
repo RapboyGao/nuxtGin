@@ -33,6 +33,7 @@ type WebSocketEndpointMeta struct {
 	Description       string
 	ClientMessageType reflect.Type
 	ServerMessageType reflect.Type
+	MessageTypes      []string
 }
 
 // WebSocketEndpointLike is implemented by WebSocketEndpoint to expose metadata and gin handler.
@@ -193,9 +194,10 @@ func (c *WebSocketContext) Publish(message any) error {
 // WebSocketEndpoint is a websocket endpoint definition.
 // WebSocketEndpoint 是 WebSocket 端点定义。
 type WebSocketEndpoint struct {
-	Name        string
-	Path        string
-	Description string
+	Name         string
+	Path         string
+	Description  string
+	MessageTypes []string
 
 	// Message types for TS generation. If ClientMessageType is nil, defaults to WebSocketMessage.
 	// 用于 TS 生成的消息类型；若 ClientMessageType 为空则默认 WebSocketMessage。
@@ -245,6 +247,7 @@ func (s *WebSocketEndpoint) WebSocketMeta() WebSocketEndpointMeta {
 		Description:       s.Description,
 		ClientMessageType: clientType,
 		ServerMessageType: s.ServerMessageType,
+		MessageTypes:      append([]string(nil), s.MessageTypes...),
 	}
 }
 

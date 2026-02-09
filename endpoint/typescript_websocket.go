@@ -5,15 +5,17 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 )
 
 type wsFuncMeta struct {
-	FuncName    string
-	Path        string
-	Description string
-	ClientType  string
-	ServerType  string
+	FuncName     string
+	Path         string
+	Description  string
+	ClientType   string
+	ServerType   string
+	MessageTypes []string
 }
 
 // GenerateWebSocketClientFromEndpoints generates TypeScript websocket client source code from endpoints.
@@ -50,11 +52,12 @@ func generateWebSocketClientFromEndpoints(baseURL string, endpoints []WebSocketE
 		}
 
 		metas = append(metas, wsFuncMeta{
-			FuncName:    toLowerCamel(base),
-			Path:        meta.Path,
-			Description: strings.TrimSpace(meta.Description),
-			ClientType:  clientType,
-			ServerType:  serverType,
+			FuncName:     toLowerCamel(base),
+			Path:         meta.Path,
+			Description:  strings.TrimSpace(meta.Description),
+			ClientType:   clientType,
+			ServerType:   serverType,
+			MessageTypes: normalizeMessageTypes(meta.MessageTypes),
 		})
 	}
 
@@ -182,7 +185,7 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 	b.WriteString("  return trimmedBase.startsWith('/') ? `${trimmedBase}/${trimmedPath}` : `/${trimmedBase}/${trimmedPath}`;\n")
 	b.WriteString("};\n\n")
 
-	b.WriteString("export class TypedWebSocketClient<TReceive = unknown, TSend = unknown> {\n")
+	b.WriteString("export class TypedWebSocketClient<TReceive = unknown, TSend = unknown, TType extends string = string> {\n")
 	b.WriteString("  public readonly socket: WebSocket;\n")
 	b.WriteString("  private readonly serialize: (value: TSend) => unknown;\n")
 	b.WriteString("  private readonly deserialize: (value: unknown) => TReceive;\n")
@@ -190,7 +193,7 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 	b.WriteString("  private readonly openListeners = new Set<(event: Event) => void>();\n")
 	b.WriteString("  private readonly closeListeners = new Set<(event: CloseEvent) => void>();\n")
 	b.WriteString("  private readonly errorListeners = new Set<(event: Event) => void>();\n")
-	b.WriteString("  private readonly typedListeners = new Map<string, Set<(message: TReceive) => void>>();\n\n")
+	b.WriteString("  private readonly typedListeners = new Map<TType, Set<(message: TReceive) => void>>();\n\n")
 	b.WriteString("  constructor(\n")
 	b.WriteString("  url: string,\n")
 	b.WriteString("  options: WebSocketConvertOptions<TSend, TReceive>\n")
@@ -244,7 +247,7 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 	b.WriteString("    this.errorListeners.add(handler);\n")
 	b.WriteString("    return () => this.errorListeners.delete(handler);\n")
 	b.WriteString("  }\n\n")
-	b.WriteString("  onType(type: string, handler: (message: TReceive) => void, options?: TypeHandlerOptions<TReceive>): () => void {\n")
+	b.WriteString("  onType(type: TType, handler: (message: TReceive) => void, options?: TypeHandlerOptions<TReceive>): () => void {\n")
 	b.WriteString("    const listeners = this.typedListeners.get(type) ?? new Set<(message: TReceive) => void>();\n")
 	b.WriteString("    const wrapped = (message: TReceive) => {\n")
 	b.WriteString("      if (options?.validate && !options.validate(message)) return;\n")
@@ -260,7 +263,7 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 	b.WriteString("    };\n")
 	b.WriteString("  }\n\n")
 	b.WriteString("  onTyped<TPayload>(\n")
-	b.WriteString("    type: string,\n")
+	b.WriteString("    type: TType,\n")
 	b.WriteString("    handler: (payload: TPayload, message: TReceive) => void,\n")
 	b.WriteString("    options?: TypedHandlerOptions<TReceive, TPayload>\n")
 	b.WriteString("  ): () => void {\n")
@@ -291,10 +294,10 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 	b.WriteString("      }\n")
 	b.WriteString("    }\n")
 	b.WriteString("  }\n\n")
-	b.WriteString("  private defaultMessageType(message: TReceive): string | undefined {\n")
+	b.WriteString("  private defaultMessageType(message: TReceive): TType | undefined {\n")
 	b.WriteString("    if (!isPlainObject(message)) return undefined;\n")
 	b.WriteString("    const value = (message as Record<string, unknown>)['type'];\n")
-	b.WriteString("    return typeof value === 'string' ? value : undefined;\n")
+	b.WriteString("    return typeof value === 'string' ? (value as TType) : undefined;\n")
 	b.WriteString("  }\n\n")
 	b.WriteString("  private defaultPayload(message: TReceive): unknown {\n")
 	b.WriteString("    if (!isPlainObject(message)) return message;\n")
@@ -311,6 +314,11 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 			b.WriteString("\n")
 			b.WriteString(" */\n")
 		}
+		b.WriteString("export type ")
+		b.WriteString(toUpperCamel(m.FuncName))
+		b.WriteString("MessageType = ")
+		b.WriteString(renderMessageTypeUnion(m.MessageTypes))
+		b.WriteString(";\n")
 		b.WriteString("export function ")
 		b.WriteString(m.FuncName)
 		b.WriteString("<TSend = ")
@@ -319,7 +327,9 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 		b.WriteString(m.ServerType)
 		b.WriteString(">): TypedWebSocketClient<")
 		b.WriteString(m.ServerType)
-		b.WriteString(", TSend> {\n")
+		b.WriteString(", TSend, ")
+		b.WriteString(toUpperCamel(m.FuncName))
+		b.WriteString("MessageType> {\n")
 		b.WriteString("  const url = joinURLPath('")
 		b.WriteString(strings.ReplaceAll(basePath, "'", "\\'"))
 		b.WriteString("', '")
@@ -328,7 +338,9 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 		b.WriteString("  return new TypedWebSocketClient<")
 		b.WriteString(m.ServerType)
 		b.WriteString(", ")
-		b.WriteString("TSend")
+		b.WriteString("TSend, ")
+		b.WriteString(toUpperCamel(m.FuncName))
+		b.WriteString("MessageType")
 		b.WriteString(">(url, options);\n")
 		b.WriteString("}\n\n")
 	}
@@ -376,24 +388,37 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 			b.WriteString("  }\n")
 			b.WriteString("  return value;\n")
 			b.WriteString("}\n\n")
-			b.WriteString("export function onReceive")
-			b.WriteString(def.Name)
-			b.WriteString("<TReceive, TSend>(\n")
-			b.WriteString("  client: TypedWebSocketClient<TReceive, TSend>,\n")
-			b.WriteString("  handler: (message: ")
-			b.WriteString(def.Name)
-			b.WriteString(") => void\n")
-			b.WriteString("): (() => void) {\n")
-			b.WriteString("  return client.onMessage((message) => {\n")
-			b.WriteString("    const raw = message as unknown;\n")
-			b.WriteString("    if (!validate")
-			b.WriteString(def.Name)
-			b.WriteString("(raw)) return;\n")
-			b.WriteString("    handler(raw);\n")
-			b.WriteString("  });\n")
-			b.WriteString("}\n\n")
 		}
 	}
 
 	return strings.TrimSpace(b.String()) + "\n", nil
+}
+
+func normalizeMessageTypes(types []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(types))
+	for _, t := range types {
+		v := strings.TrimSpace(t)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func renderMessageTypeUnion(types []string) string {
+	if len(types) == 0 {
+		return "string"
+	}
+	parts := make([]string, 0, len(types))
+	for _, t := range types {
+		parts = append(parts, "'"+strings.ReplaceAll(t, "'", "\\'")+"'")
+	}
+	return strings.Join(parts, " | ")
 }
