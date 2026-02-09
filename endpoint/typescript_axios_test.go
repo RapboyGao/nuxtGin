@@ -135,8 +135,8 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	if !strings.Contains(code, "static requestConfig(") {
 		t.Fatalf("expected endpoint class requestConfig generation")
 	}
-	if !strings.Contains(code, "axiosClient.request<PersonDetailResp>(") || !strings.Contains(code, "this.requestConfig(") {
-		t.Fatalf("expected request to reuse requestConfig")
+	if !strings.Contains(code, "axiosClient.request<PersonDetailResp>(") || !strings.Contains(code, "GetPersonByIDGet.requestConfig(") {
+		t.Fatalf("expected request to reuse requestConfig via class name")
 	}
 	if !strings.Contains(code, "static readonly PATH =") || !strings.Contains(code, "/api/v1/Person/:ID") {
 		t.Fatalf("expected endpoint class static PATH generation")
@@ -144,8 +144,8 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	if !strings.Contains(code, "static async request(") {
 		t.Fatalf("expected endpoint class static request method generation")
 	}
-	if !strings.Contains(code, "return this.PATH;") {
-		t.Fatalf("expected static PATH usage for endpoints without path placeholders in buildURL")
+	if !strings.Contains(code, "return ListPeopleGet.PATH;") {
+		t.Fatalf("expected static PATH usage via class name for endpoints without path placeholders in buildURL")
 	}
 	if !strings.Contains(code, "params: {") || !strings.Contains(code, "ID: string;") {
 		t.Fatalf("expected inline path params type to preserve casing")

@@ -342,7 +342,9 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 			b.WriteString(";\n")
 		} else {
 			b.WriteString("(): string {\n")
-			b.WriteString("    return this.PATH;\n")
+			b.WriteString("    return ")
+			b.WriteString(className)
+			b.WriteString(".PATH;\n")
 		}
 		b.WriteString("  }\n\n")
 		requestConfigArgs := make([]string, 0, 3)
@@ -355,9 +357,13 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 		b.WriteString(strings.Join(requestConfigArgs, ", "))
 		b.WriteString("): AxiosRequestConfig {\n")
 		if hasPathPlaceholders {
-			b.WriteString("    const url = this.buildURL(params);\n")
+			b.WriteString("    const url = ")
+			b.WriteString(className)
+			b.WriteString(".buildURL(params);\n")
 		} else {
-			b.WriteString("    const url = this.buildURL();\n")
+			b.WriteString("    const url = ")
+			b.WriteString(className)
+			b.WriteString(".buildURL();\n")
 		}
 		if m.HasReqBody {
 			if m.RequestKind == TSKindFormURLEncoded {
@@ -416,7 +422,9 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 			b.WriteString("    };\n")
 		}
 		b.WriteString("    return {\n")
-		b.WriteString("      method: this.METHOD,\n")
+		b.WriteString("      method: ")
+		b.WriteString(className)
+		b.WriteString(".METHOD,\n")
 		b.WriteString("      url,\n")
 		if m.HasQuery {
 			b.WriteString("      params: normalizedParams.query,\n")
@@ -465,7 +473,9 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 		}
 		b.WriteString("    const response = await axiosClient.request<")
 		b.WriteString(m.ResponseWireType)
-		b.WriteString(">(this.requestConfig(")
+		b.WriteString(">(")
+		b.WriteString(className)
+		b.WriteString(".requestConfig(")
 		b.WriteString(strings.Join(callArgs, ", "))
 		b.WriteString("));\n")
 		if m.ResponseType == "void" {
