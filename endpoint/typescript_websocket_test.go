@@ -9,44 +9,44 @@ import (
 )
 
 type wsClientMessage struct {
-	Type    string                  `json:"type"`
-	Payload wsClientPayloadEnvelope `json:"payload"`
+	Type    string                  `json:"type" tsdoc:"消息类型 / Message type"`
+	Payload wsClientPayloadEnvelope `json:"payload" tsdoc:"消息载荷 / Message payload"`
 }
 
 type wsClientPayloadEnvelope struct {
-	JoinRoom *wsClientJoinRoomPayload `json:"joinRoom,omitempty"`
-	ChatText *wsClientChatTextPayload `json:"chatText,omitempty"`
+	JoinRoom *wsClientJoinRoomPayload `json:"joinRoom,omitempty" tsdoc:"加入房间消息 / Join room payload"`
+	ChatText *wsClientChatTextPayload `json:"chatText,omitempty" tsdoc:"聊天文本消息 / Chat text payload"`
 }
 
 type wsClientJoinRoomPayload struct {
-	RoomID   string `json:"roomID"`
-	ClientID string `json:"clientID"`
+	RoomID   string `json:"roomID" tsdoc:"房间ID / Room identifier"`
+	ClientID string `json:"clientID" tsdoc:"客户端ID / Client identifier"`
 }
 
 type wsClientChatTextPayload struct {
-	RoomID string `json:"roomID"`
-	Text   string `json:"text"`
+	RoomID string `json:"roomID" tsdoc:"房间ID / Room identifier"`
+	Text   string `json:"text" tsdoc:"文本内容 / Message text"`
 }
 
 type wsServerMessageEnvelope struct {
-	Type    string                  `json:"type"`
-	Payload wsServerPayloadEnvelope `json:"payload"`
+	Type    string                  `json:"type" tsdoc:"服务端消息类型 / Server message type"`
+	Payload wsServerPayloadEnvelope `json:"payload" tsdoc:"服务端消息载荷 / Server message payload"`
 }
 
 type wsServerPayloadEnvelope struct {
-	Ack       *wsServerAckPayload       `json:"ack,omitempty"`
-	Broadcast *wsServerBroadcastPayload `json:"broadcast,omitempty"`
+	Ack       *wsServerAckPayload       `json:"ack,omitempty" tsdoc:"确认消息 / Acknowledgement payload"`
+	Broadcast *wsServerBroadcastPayload `json:"broadcast,omitempty" tsdoc:"广播消息 / Broadcast payload"`
 }
 
 type wsServerAckPayload struct {
-	Accepted bool   `json:"accepted"`
-	Reason   string `json:"reason,omitempty"`
+	Accepted bool   `json:"accepted" tsdoc:"是否接受 / Whether accepted"`
+	Reason   string `json:"reason,omitempty" tsdoc:"原因说明 / Reason detail"`
 }
 
 type wsServerBroadcastPayload struct {
-	FromClientID string `json:"fromClientID"`
-	RoomID       string `json:"roomID"`
-	Text         string `json:"text"`
+	FromClientID string `json:"fromClientID" tsdoc:"发送者客户端ID / Sender client identifier"`
+	RoomID       string `json:"roomID" tsdoc:"房间ID / Room identifier"`
+	Text         string `json:"text" tsdoc:"广播文本 / Broadcast text"`
 }
 
 func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T) {
@@ -69,17 +69,20 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "export function validateWsClientMessage(value: unknown): value is WsClientMessage {") {
 		t.Fatalf("expected websocket interface validator generation")
 	}
+	if !strings.Contains(code, "/** 消息类型 / Message type */") {
+		t.Fatalf("expected websocket tsdoc comment generation")
+	}
 	if !strings.Contains(code, "export function validateWsClientJoinRoomPayload(value: unknown): value is WsClientJoinRoomPayload {") {
 		t.Fatalf("expected websocket validator generation for nested client payload")
 	}
 	if !strings.Contains(code, "export function validateWsServerAckPayload(value: unknown): value is WsServerAckPayload {") {
 		t.Fatalf("expected websocket validator generation for nested server payload")
 	}
-	if !strings.Contains(code, "export function createWsClientMessage(value: unknown): WsClientMessage {") {
-		t.Fatalf("expected websocket interface factory generation")
+	if !strings.Contains(code, "export function ensureWsClientMessage(value: unknown): WsClientMessage {") {
+		t.Fatalf("expected websocket interface ensure function generation")
 	}
 	if !strings.Contains(code, "if (!validateWsClientMessage(value)) {") {
-		t.Fatalf("expected websocket interface factory to validate before create")
+		t.Fatalf("expected websocket interface ensure function to validate first")
 	}
 	if !strings.Contains(code, "onType(type: TType, handler: (message: TReceive) => void, options?: TypeHandlerOptions<TReceive>): () => void") {
 		t.Fatalf("expected onType typed handler registration")

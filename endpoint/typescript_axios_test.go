@@ -11,7 +11,7 @@ import (
 )
 
 type PathByID struct {
-	ID string `json:"id"`
+	ID string `json:"id" tsdoc:"路径ID / Path identifier"`
 }
 
 type GetPersonReq struct {
@@ -20,29 +20,29 @@ type GetPersonReq struct {
 }
 
 type ResumeItem struct {
-	Company   string    `json:"company"`
-	Title     string    `json:"title"`
-	StartDate time.Time `json:"startDate"`
-	EndDate   time.Time `json:"endDate"`
+	Company   string    `json:"company" tsdoc:"公司名称 / Company name"`
+	Title     string    `json:"title" tsdoc:"职位名称 / Job title"`
+	StartDate time.Time `json:"startDate" tsdoc:"开始时间 / Start date"`
+	EndDate   time.Time `json:"endDate" tsdoc:"结束时间 / End date"`
 }
 
 type PersonDetailResp struct {
-	PersonID string       `json:"personID"`
-	Salary   int64        `json:"salary"`
-	Resumes  []ResumeItem `json:"resumes"`
+	PersonID string       `json:"personID" tsdoc:"人员ID / Person identifier"`
+	Salary   int64        `json:"salary" tsdoc:"薪资(分) / Salary in cents"`
+	Resumes  []ResumeItem `json:"resumes" tsdoc:"履历列表 / Resume items"`
 }
 
 type QueryParams struct {
-	Page     int `json:"Page"`
-	PageSize int `json:"pageSize"`
+	Page     int `json:"Page" tsdoc:"页码 / Page index"`
+	PageSize int `json:"pageSize" tsdoc:"每页条数 / Page size"`
 }
 
 type HeaderParams struct {
-	ClientID string `json:"ClientID"`
+	ClientID string `json:"ClientID" tsdoc:"客户端ID / Client identifier"`
 }
 
 type CookieParams struct {
-	SessionID string `json:"sessionID"`
+	SessionID string `json:"sessionID" tsdoc:"会话ID / Session identifier"`
 }
 
 func TestGenerateAxiosFromEndpoints(t *testing.T) {
