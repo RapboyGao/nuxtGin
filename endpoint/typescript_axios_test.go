@@ -16,6 +16,7 @@ type PathByID struct {
 
 type GetPersonReq struct {
 	PersonID string  `json:"personID" tsdoc:"人员ID / Person identifier"`
+	Level    string  `json:"level" tsunion:"warning,success,error" tsdoc:"消息等级 / Message level"`
 	TraceID  *string `json:"traceID,omitempty"`
 }
 
@@ -140,6 +141,12 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	}
 	if !strings.Contains(code, "traceID?: string;") {
 		t.Fatalf("expected omitempty field to become optional")
+	}
+	if !strings.Contains(code, "level: 'warning' | 'success' | 'error';") {
+		t.Fatalf("expected tsunion field to generate string literal union")
+	}
+	if !strings.Contains(code, "typeof obj[\"level\"] === 'string' && (obj[\"level\"] === 'warning' || obj[\"level\"] === 'success' || obj[\"level\"] === 'error')") {
+		t.Fatalf("expected tsunion validator generation")
 	}
 	if !strings.Contains(code, "salary: string;") {
 		t.Fatalf("expected int64 to map to string")

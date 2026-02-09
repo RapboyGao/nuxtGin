@@ -46,6 +46,7 @@ type wsServerAckPayload struct {
 type wsServerBroadcastPayload struct {
 	FromClientID string `json:"fromClientID" tsdoc:"发送者客户端ID / Sender client identifier"`
 	RoomID       string `json:"roomID" tsdoc:"房间ID / Room identifier"`
+	Level        string `json:"level" tsunion:"warning,success,error" tsdoc:"消息等级 / Message level"`
 	Text         string `json:"text" tsdoc:"广播文本 / Broadcast text"`
 }
 
@@ -77,6 +78,12 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	}
 	if !strings.Contains(code, "export function validateWsServerAckPayload(value: unknown): value is WsServerAckPayload {") {
 		t.Fatalf("expected websocket validator generation for nested server payload")
+	}
+	if !strings.Contains(code, "level: 'warning' | 'success' | 'error';") {
+		t.Fatalf("expected websocket tsunion field to generate string literal union")
+	}
+	if !strings.Contains(code, "typeof obj[\"level\"] === 'string' && (obj[\"level\"] === 'warning' || obj[\"level\"] === 'success' || obj[\"level\"] === 'error')") {
+		t.Fatalf("expected websocket tsunion validator generation")
 	}
 	if !strings.Contains(code, "export function ensureWsClientMessage(value: unknown): WsClientMessage {") {
 		t.Fatalf("expected websocket interface ensure function generation")
