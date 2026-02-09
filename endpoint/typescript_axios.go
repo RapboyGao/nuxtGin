@@ -166,7 +166,7 @@ func exportAxiosFromEndpointsToTSFile(baseURL string, endpoints []EndpointLike, 
 func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosFuncMeta) (string, error) {
 	var b strings.Builder
 	writeTSBanner(&b, "Nuxt Gin HTTP API Client (Axios)")
-	b.WriteString("import axios from 'axios';\n\n")
+	b.WriteString("import axios, { type AxiosRequestConfig } from 'axios';\n\n")
 	b.WriteString("const axiosClient = axios.create();\n\n")
 	b.WriteString("const isPlainObject = (value: unknown): value is Record<string, unknown> =>\n")
 	b.WriteString("  Object.prototype.toString.call(value) === '[object Object]';\n\n")
@@ -257,6 +257,19 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 	}
 
 	for _, m := range metas {
+		className := toUpperCamel(m.FuncName) + toUpperCamel(strings.ToLower(m.Method))
+		fullPath := joinURLPath(baseURL, m.Path)
+		hasPathPlaceholders := len(extractPathParams(m.Path)) > 0
+		pathParamNames := extractPathParams(m.Path)
+		mappedPathParamNames := make([]string, 0, len(pathParamNames))
+		for _, raw := range pathParamNames {
+			key := strings.ToLower(raw)
+			if mapped, ok := m.PathParamMap[key]; ok && strings.TrimSpace(mapped) != "" {
+				mappedPathParamNames = append(mappedPathParamNames, mapped)
+				continue
+			}
+			mappedPathParamNames = append(mappedPathParamNames, raw)
+		}
 		if m.APIDescription != "" || m.RequestDesc != "" || m.ResponseDesc != "" {
 			b.WriteString("/**\n")
 			if m.APIDescription != "" {
@@ -281,6 +294,21 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 			}
 			b.WriteString(" */\n")
 		}
+		b.WriteString("export class ")
+		b.WriteString(className)
+		b.WriteString(" {\n")
+		b.WriteString("  static readonly NAME = '")
+		b.WriteString(strings.ReplaceAll(m.FuncName, "'", "\\'"))
+		b.WriteString("' as const;\n")
+		b.WriteString("  static readonly SUMMARY = '")
+		b.WriteString(strings.ReplaceAll(escapeTSComment(m.APIDescription), "'", "\\'"))
+		b.WriteString("' as const;\n")
+		b.WriteString("  static readonly METHOD = '")
+		b.WriteString(m.Method)
+		b.WriteString("' as const;\n")
+		b.WriteString("  static readonly PATH = '")
+		b.WriteString(strings.ReplaceAll(fullPath, "'", "\\'"))
+		b.WriteString("' as const;\n\n")
 		args := make([]string, 0, 3)
 		if m.HasParams {
 			args = append(args, "params: "+m.ParamsType)
@@ -288,8 +316,128 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 		if m.HasReqBody {
 			args = append(args, "requestBody: "+m.RequestType)
 		}
-		b.WriteString("export async function ")
-		b.WriteString(m.FuncName)
+		b.WriteString("  static pathParamsShape(): readonly string[] {\n")
+		if len(mappedPathParamNames) == 0 {
+			b.WriteString("    return [] as const;\n")
+		} else {
+			b.WriteString("    return [")
+			for i, name := range mappedPathParamNames {
+				if i > 0 {
+					b.WriteString(", ")
+				}
+				b.WriteString("'")
+				b.WriteString(strings.ReplaceAll(name, "'", "\\'"))
+				b.WriteString("'")
+			}
+			b.WriteString("] as const;\n")
+		}
+		b.WriteString("  }\n\n")
+		b.WriteString("  static buildURL")
+		if hasPathPlaceholders {
+			b.WriteString("(params: ")
+			b.WriteString(m.ParamsType)
+			b.WriteString("): string {\n")
+			b.WriteString("    return ")
+			b.WriteString(buildTSURLExprWithBaseAndMap(baseURL, m.Path, m.PathParamMap))
+			b.WriteString(";\n")
+		} else {
+			b.WriteString("(): string {\n")
+			b.WriteString("    return this.PATH;\n")
+		}
+		b.WriteString("  }\n\n")
+		requestConfigArgs := make([]string, 0, 3)
+		requestConfigArgs = append(requestConfigArgs, args...)
+		if m.HasReqBody {
+			requestConfigArgs = append(requestConfigArgs, "options?: AxiosConvertOptions<"+m.RequestType+", "+m.ResponseType+">")
+		}
+		b.WriteString("  static requestConfig")
+		b.WriteString("(")
+		b.WriteString(strings.Join(requestConfigArgs, ", "))
+		b.WriteString("): AxiosRequestConfig {\n")
+		if hasPathPlaceholders {
+			b.WriteString("    const url = this.buildURL(params);\n")
+		} else {
+			b.WriteString("    const url = this.buildURL();\n")
+		}
+		if m.HasReqBody {
+			if m.RequestKind == TSKindFormURLEncoded {
+				b.WriteString("    const serializedRequest = options?.serializeRequest ? options.serializeRequest(requestBody) : requestBody;\n")
+				b.WriteString("    const requestData = toFormUrlEncoded(serializedRequest);\n")
+			} else {
+				b.WriteString("    const requestData = options?.serializeRequest ? options.serializeRequest(requestBody) : requestBody;\n")
+			}
+		}
+		needsNormalizedParams := m.HasQuery || m.HasHeader || m.HasCookie
+		if needsNormalizedParams {
+			b.WriteString("    const normalizedParams = normalizeParamKeys(params, {\n")
+			if m.HasQuery {
+				b.WriteString("      query: ")
+				b.WriteString(renderParamMapObject(m.QueryParamMap))
+				b.WriteString(",\n")
+			}
+			if m.HasHeader {
+				b.WriteString("      header: ")
+				b.WriteString(renderParamMapObject(m.HeaderParamMap))
+				b.WriteString(",\n")
+			}
+			if m.HasCookie {
+				b.WriteString("      cookie: ")
+				b.WriteString(renderParamMapObject(m.CookieParamMap))
+				b.WriteString(",\n")
+			}
+			b.WriteString("    });\n")
+		}
+		requestHeaderValue := ""
+		switch m.RequestKind {
+		case TSKindFormURLEncoded:
+			requestHeaderValue = "application/x-www-form-urlencoded"
+		case TSKindText:
+			requestHeaderValue = "text/plain; charset=utf-8"
+		case TSKindBytes:
+			requestHeaderValue = "application/octet-stream"
+		}
+		needsHeaders := m.HasHeader || m.HasCookie || requestHeaderValue != ""
+		if requestHeaderValue != "" {
+			b.WriteString("    const requestHeaders = { 'Content-Type': '")
+			b.WriteString(requestHeaderValue)
+			b.WriteString("' };\n")
+		}
+		if needsHeaders {
+			b.WriteString("    const headers = {\n")
+			if m.HasHeader {
+				b.WriteString("      ...(normalizedParams?.header ?? {}),\n")
+			}
+			if requestHeaderValue != "" {
+				b.WriteString("      ...requestHeaders,\n")
+			}
+			if m.HasCookie {
+				b.WriteString("      Cookie: buildCookieHeader((normalizedParams?.cookie ?? {}) as Record<string, unknown>),\n")
+			}
+			b.WriteString("    };\n")
+		}
+		b.WriteString("    return {\n")
+		b.WriteString("      method: this.METHOD,\n")
+		b.WriteString("      url,\n")
+		if m.HasQuery {
+			b.WriteString("      params: normalizedParams.query,\n")
+		}
+		if needsHeaders {
+			b.WriteString("      headers,\n")
+		}
+		switch m.ResponseKind {
+		case TSKindStream:
+			b.WriteString("      responseType: 'blob',\n")
+		case TSKindBytes:
+			b.WriteString("      responseType: 'arraybuffer',\n")
+		case TSKindText:
+			b.WriteString("      responseType: 'text',\n")
+		}
+		if m.HasReqBody {
+			b.WriteString("      data: requestData,\n")
+		}
+		b.WriteString("    };\n")
+		b.WriteString("  }\n\n")
+		b.WriteString("  static async request")
 		b.WriteString("(")
 		b.WriteString(strings.Join(args, ", "))
 		if len(args) > 0 {
@@ -307,110 +455,39 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 		b.WriteString("): Promise<")
 		b.WriteString(m.ResponseType)
 		b.WriteString("> {\n")
-
-		b.WriteString("  const url = ")
-		b.WriteString(buildTSURLExprWithBaseAndMap(baseURL, m.Path, m.PathParamMap))
-		b.WriteString(";\n")
+		callArgs := make([]string, 0, 3)
+		if m.HasParams {
+			callArgs = append(callArgs, "params")
+		}
 		if m.HasReqBody {
-			if m.RequestKind == TSKindFormURLEncoded {
-				b.WriteString("  const serializedRequest = options?.serializeRequest ? options.serializeRequest(requestBody) : requestBody;\n")
-				b.WriteString("  const requestData = toFormUrlEncoded(serializedRequest);\n")
-			} else {
-				b.WriteString("  const requestData = options?.serializeRequest ? options.serializeRequest(requestBody) : requestBody;\n")
-			}
+			callArgs = append(callArgs, "requestBody")
+			callArgs = append(callArgs, "options")
 		}
-		needsNormalizedParams := m.HasQuery || m.HasHeader || m.HasCookie
-		if needsNormalizedParams {
-			b.WriteString("  const normalizedParams = normalizeParamKeys(params, {\n")
-			if m.HasQuery {
-				b.WriteString("    query: ")
-				b.WriteString(renderParamMapObject(m.QueryParamMap))
-				b.WriteString(",\n")
-			}
-			if m.HasHeader {
-				b.WriteString("    header: ")
-				b.WriteString(renderParamMapObject(m.HeaderParamMap))
-				b.WriteString(",\n")
-			}
-			if m.HasCookie {
-				b.WriteString("    cookie: ")
-				b.WriteString(renderParamMapObject(m.CookieParamMap))
-				b.WriteString(",\n")
-			}
-			b.WriteString("  });\n")
-		}
-		requestHeaderValue := ""
-		switch m.RequestKind {
-		case TSKindFormURLEncoded:
-			requestHeaderValue = "application/x-www-form-urlencoded"
-		case TSKindText:
-			requestHeaderValue = "text/plain; charset=utf-8"
-		case TSKindBytes:
-			requestHeaderValue = "application/octet-stream"
-		}
-		needsHeaders := m.HasHeader || m.HasCookie || requestHeaderValue != ""
-		if requestHeaderValue != "" {
-			b.WriteString("  const requestHeaders = { 'Content-Type': '")
-			b.WriteString(requestHeaderValue)
-			b.WriteString("' };\n")
-		}
-		if needsHeaders {
-			b.WriteString("  const headers = {\n")
-			if m.HasHeader {
-				b.WriteString("    ...(normalizedParams?.header ?? {}),\n")
-			}
-			if requestHeaderValue != "" {
-				b.WriteString("    ...requestHeaders,\n")
-			}
-			if m.HasCookie {
-				b.WriteString("    Cookie: buildCookieHeader((normalizedParams?.cookie ?? {}) as Record<string, unknown>),\n")
-			}
-			b.WriteString("  };\n")
-		}
-		b.WriteString("  const response = await axiosClient.request<")
+		b.WriteString("    const response = await axiosClient.request<")
 		b.WriteString(m.ResponseWireType)
-		b.WriteString(">({\n")
-		b.WriteString("    method: '")
-		b.WriteString(m.Method)
-		b.WriteString("',\n")
-		b.WriteString("    url,\n")
-		if m.HasQuery {
-			b.WriteString("    params: normalizedParams.query,\n")
-		}
-		if needsHeaders {
-			b.WriteString("    headers,\n")
-		}
-		switch m.ResponseKind {
-		case TSKindStream:
-			b.WriteString("    responseType: 'blob',\n")
-		case TSKindBytes:
-			b.WriteString("    responseType: 'arraybuffer',\n")
-		case TSKindText:
-			b.WriteString("    responseType: 'text',\n")
-		}
-		if m.HasReqBody {
-			b.WriteString("    data: requestData,\n")
-		}
-		b.WriteString("  });\n")
+		b.WriteString(">(this.requestConfig(")
+		b.WriteString(strings.Join(callArgs, ", "))
+		b.WriteString("));\n")
 		if m.ResponseType == "void" {
-			b.WriteString("  return;\n")
+			b.WriteString("    return;\n")
 		} else {
 			if m.ResponseKind == TSKindBytes {
-				b.WriteString("  const responseData = new Uint8Array(response.data as ArrayBuffer);\n")
-				b.WriteString("  if (options?.deserializeResponse) {\n")
-				b.WriteString("    return options.deserializeResponse(responseData);\n")
-				b.WriteString("  }\n")
-				b.WriteString("  return responseData;\n")
+				b.WriteString("    const responseData = new Uint8Array(response.data as ArrayBuffer);\n")
+				b.WriteString("    if (options?.deserializeResponse) {\n")
+				b.WriteString("      return options.deserializeResponse(responseData);\n")
+				b.WriteString("    }\n")
+				b.WriteString("    return responseData;\n")
 			} else {
-				b.WriteString("  const responseData = response.data as unknown;\n")
-				b.WriteString("  if (options?.deserializeResponse) {\n")
-				b.WriteString("    return options.deserializeResponse(responseData);\n")
-				b.WriteString("  }\n")
-				b.WriteString("  return responseData as ")
+				b.WriteString("    const responseData = response.data as unknown;\n")
+				b.WriteString("    if (options?.deserializeResponse) {\n")
+				b.WriteString("      return options.deserializeResponse(responseData);\n")
+				b.WriteString("    }\n")
+				b.WriteString("    return responseData as ")
 				b.WriteString(m.ResponseType)
 				b.WriteString(";\n")
 			}
 		}
+		b.WriteString("  }\n")
 		b.WriteString("}\n\n")
 	}
 
@@ -442,7 +519,7 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 		}
 	}
 
-	return strings.TrimSpace(b.String()) + "\n", nil
+	return finalizeTypeScriptCode(b.String()), nil
 }
 
 func validateEndpointMeta(meta EndpointMeta) error {

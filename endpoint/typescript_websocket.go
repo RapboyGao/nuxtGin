@@ -397,7 +397,7 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 		}
 	}
 
-	return strings.TrimSpace(b.String()) + "\n", nil
+	return finalizeTypeScriptCode(b.String()), nil
 }
 
 func normalizeMessageTypes(types []string) []string {

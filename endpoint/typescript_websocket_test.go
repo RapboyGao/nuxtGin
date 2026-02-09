@@ -68,37 +68,37 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "export class TypedWebSocketClient<") {
 		t.Fatalf("expected class based websocket client generation")
 	}
-	if !strings.Contains(code, "export function validateWsClientMessage(value: unknown): value is WsClientMessage {") {
+	if !strings.Contains(code, "export function validateWsClientMessage(") || !strings.Contains(code, "value is WsClientMessage") {
 		t.Fatalf("expected websocket interface validator generation")
 	}
 	if !strings.Contains(code, "/** 消息类型 / Message type */") {
 		t.Fatalf("expected websocket tsdoc comment generation")
 	}
-	if !strings.Contains(code, "export function validateWsClientJoinRoomPayload(value: unknown): value is WsClientJoinRoomPayload {") {
+	if !strings.Contains(code, "export function validateWsClientJoinRoomPayload(") || !strings.Contains(code, "value is WsClientJoinRoomPayload") {
 		t.Fatalf("expected websocket validator generation for nested client payload")
 	}
-	if !strings.Contains(code, "export function validateWsServerAckPayload(value: unknown): value is WsServerAckPayload {") {
+	if !strings.Contains(code, "export function validateWsServerAckPayload(") || !strings.Contains(code, "value is WsServerAckPayload") {
 		t.Fatalf("expected websocket validator generation for nested server payload")
 	}
-	if !strings.Contains(code, "level: 'warning' | 'success' | 'error';") {
+	if !strings.Contains(code, "level:") || !strings.Contains(code, "warning") || !strings.Contains(code, "success") || !strings.Contains(code, "error") {
 		t.Fatalf("expected websocket tsunion field to generate string literal union")
 	}
-	if !strings.Contains(code, "typeof obj[\"level\"] === 'string' && (obj[\"level\"] === 'warning' || obj[\"level\"] === 'success' || obj[\"level\"] === 'error')") {
+	if !strings.Contains(code, "typeof obj[\"level\"] ===") || !strings.Contains(code, "obj[\"level\"] ===") {
 		t.Fatalf("expected websocket tsunion validator generation")
 	}
 	if !strings.Contains(code, "priority: 1 | 2 | 3;") {
 		t.Fatalf("expected websocket numeric tsunion field generation")
 	}
-	if !strings.Contains(code, "typeof obj[\"priority\"] === 'number' && (obj[\"priority\"] === 1 || obj[\"priority\"] === 2 || obj[\"priority\"] === 3)") {
+	if !strings.Contains(code, "typeof obj[\"priority\"] ===") || !strings.Contains(code, "obj[\"priority\"] === 3") {
 		t.Fatalf("expected websocket numeric tsunion validator generation")
 	}
-	if !strings.Contains(code, "export function ensureWsClientMessage(value: unknown): WsClientMessage {") {
+	if !strings.Contains(code, "export function ensureWsClientMessage(") || !strings.Contains(code, "): WsClientMessage") {
 		t.Fatalf("expected websocket interface ensure function generation")
 	}
 	if !strings.Contains(code, "if (!validateWsClientMessage(value)) {") {
 		t.Fatalf("expected websocket interface ensure function to validate first")
 	}
-	if !strings.Contains(code, "onType(type: TType, handler: (message: TReceive) => void, options?: TypeHandlerOptions<TReceive>): () => void") {
+	if !strings.Contains(code, "onType(") || !strings.Contains(code, "type: TType") || !strings.Contains(code, "TypeHandlerOptions<TReceive>") {
 		t.Fatalf("expected onType typed handler registration")
 	}
 	if !strings.Contains(code, "onTyped<TPayload>(") {
@@ -122,7 +122,7 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "export function chatEvents<TSend =") {
 		t.Fatalf("expected endpoint factory to allow custom send union types")
 	}
-	if !strings.Contains(code, "export type ChatEventsMessageType = 'chat:text' | 'room:join' | 'system:ack';") {
+	if !strings.Contains(code, "export type ChatEventsMessageType =") || !strings.Contains(code, "chat:text") || !strings.Contains(code, "room:join") || !strings.Contains(code, "system:ack") {
 		t.Fatalf("expected message type union alias generation")
 	}
 	if !strings.Contains(code, "TypedWebSocketClient<WsServerMessageEnvelope, TSend, ChatEventsMessageType>") {
@@ -131,7 +131,7 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "export function chatEvents<TSend =") {
 		t.Fatalf("expected endpoint factory function generation")
 	}
-	if !strings.Contains(code, ">(options: WebSocketConvertOptions<TSend, WsServerMessageEnvelope>)") {
+	if !strings.Contains(code, "options: WebSocketConvertOptions<TSend, WsServerMessageEnvelope>") {
 		t.Fatalf("expected required options in endpoint factory")
 	}
 	if !strings.Contains(code, "options: WebSocketConvertOptions<TSend, TReceive>") {

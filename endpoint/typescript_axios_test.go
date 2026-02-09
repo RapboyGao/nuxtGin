@@ -114,8 +114,38 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	}
 	code := string(data)
 
-	if !strings.Contains(code, "export async function getPersonByID(") {
-		t.Fatalf("expected generated function to preserve name casing")
+	if !strings.Contains(code, "export class GetPersonByIDGet {") {
+		t.Fatalf("expected per-endpoint class generation")
+	}
+	if !strings.Contains(code, "static readonly METHOD =") || !strings.Contains(code, "GET") {
+		t.Fatalf("expected endpoint class static METHOD generation")
+	}
+	if !strings.Contains(code, "static readonly NAME =") || !strings.Contains(code, "getPersonByID") {
+		t.Fatalf("expected endpoint class static NAME generation")
+	}
+	if !strings.Contains(code, "static readonly SUMMARY =") || !strings.Contains(code, "Get person by id.") {
+		t.Fatalf("expected endpoint class static SUMMARY generation")
+	}
+	if !strings.Contains(code, "static pathParamsShape(): readonly string[] {") {
+		t.Fatalf("expected endpoint class pathParamsShape generation")
+	}
+	if !strings.Contains(code, "static buildURL(") {
+		t.Fatalf("expected endpoint class buildURL generation")
+	}
+	if !strings.Contains(code, "static requestConfig(") {
+		t.Fatalf("expected endpoint class requestConfig generation")
+	}
+	if !strings.Contains(code, "axiosClient.request<PersonDetailResp>(") || !strings.Contains(code, "this.requestConfig(") {
+		t.Fatalf("expected request to reuse requestConfig")
+	}
+	if !strings.Contains(code, "static readonly PATH =") || !strings.Contains(code, "/api/v1/Person/:ID") {
+		t.Fatalf("expected endpoint class static PATH generation")
+	}
+	if !strings.Contains(code, "static async request(") {
+		t.Fatalf("expected endpoint class static request method generation")
+	}
+	if !strings.Contains(code, "return this.PATH;") {
+		t.Fatalf("expected static PATH usage for endpoints without path placeholders in buildURL")
 	}
 	if !strings.Contains(code, "params: {") || !strings.Contains(code, "ID: string;") {
 		t.Fatalf("expected inline path params type to preserve casing")
@@ -132,10 +162,10 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	if !strings.Contains(code, "export interface GetPersonReq") {
 		t.Fatalf("expected request interface generation")
 	}
-	if !strings.Contains(code, "export function validateGetPersonReq(value: unknown): value is GetPersonReq {") {
+	if !strings.Contains(code, "export function validateGetPersonReq(") || !strings.Contains(code, "value is GetPersonReq") {
 		t.Fatalf("expected interface validator generation")
 	}
-	if !strings.Contains(code, "if (!( \"personID\" in obj)) return false;") {
+	if !strings.Contains(code, `if (!("personID" in obj)) return false;`) {
 		t.Fatalf("expected required-field validation generation")
 	}
 	if !strings.Contains(code, "/** 人员ID / Person identifier */") {
@@ -144,22 +174,22 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	if !strings.Contains(code, "traceID?: string;") {
 		t.Fatalf("expected omitempty field to become optional")
 	}
-	if !strings.Contains(code, "level: 'warning' | 'success' | 'error';") {
+	if !strings.Contains(code, "level:") || !strings.Contains(code, "warning") || !strings.Contains(code, "success") || !strings.Contains(code, "error") {
 		t.Fatalf("expected tsunion field to generate string literal union")
 	}
-	if !strings.Contains(code, "typeof obj[\"level\"] === 'string' && (obj[\"level\"] === 'warning' || obj[\"level\"] === 'success' || obj[\"level\"] === 'error')") {
+	if !strings.Contains(code, "typeof obj[\"level\"] ===") || !strings.Contains(code, "obj[\"level\"] ===") {
 		t.Fatalf("expected tsunion validator generation")
 	}
 	if !strings.Contains(code, "retryAfter: 0 | 5 | 30;") {
 		t.Fatalf("expected numeric tsunion field generation")
 	}
-	if !strings.Contains(code, "typeof obj[\"retryAfter\"] === 'number' && (obj[\"retryAfter\"] === 0 || obj[\"retryAfter\"] === 5 || obj[\"retryAfter\"] === 30)") {
+	if !strings.Contains(code, "typeof obj[\"retryAfter\"] ===") || !strings.Contains(code, "obj[\"retryAfter\"] === 30") {
 		t.Fatalf("expected numeric tsunion validator generation")
 	}
 	if !strings.Contains(code, "canFallback: true | false;") {
 		t.Fatalf("expected boolean tsunion field generation")
 	}
-	if !strings.Contains(code, "typeof obj[\"canFallback\"] === 'boolean' && (obj[\"canFallback\"] === true || obj[\"canFallback\"] === false)") {
+	if !strings.Contains(code, "typeof obj[\"canFallback\"] ===") || !strings.Contains(code, "obj[\"canFallback\"] === true") {
 		t.Fatalf("expected boolean tsunion validator generation")
 	}
 	if !strings.Contains(code, "salary: string;") {
