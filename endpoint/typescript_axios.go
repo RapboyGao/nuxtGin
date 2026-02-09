@@ -490,6 +490,10 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 	if len(registry.defs) > 0 {
 		b.WriteString("// =====================================================\n")
 		b.WriteString("// INTERFACES & VALIDATORS\n")
+		b.WriteString("// Default: object schemas use interface.\n")
+		b.WriteString("// Fallback: use type only when interface cannot model the shape.\n")
+		b.WriteString("// 默认：对象结构使用 interface。\n")
+		b.WriteString("// 兜底：只有 interface 无法表达时才使用 type。\n")
 		b.WriteString("// =====================================================\n\n")
 	}
 	for _, def := range registry.defs {

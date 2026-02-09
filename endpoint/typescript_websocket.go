@@ -314,6 +314,8 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 			b.WriteString("\n")
 			b.WriteString(" */\n")
 		}
+		b.WriteString("// Literal union is emitted as type because interface cannot model union values.\n")
+		b.WriteString("// 字面量联合类型使用 type，因为 interface 不能表达联合值。\n")
 		b.WriteString("export type ")
 		b.WriteString(toUpperCamel(m.FuncName))
 		b.WriteString("MessageType = ")
@@ -348,6 +350,10 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 	if len(registry.defs) > 0 {
 		b.WriteString("// =====================================================\n")
 		b.WriteString("// INTERFACES & VALIDATORS\n")
+		b.WriteString("// Default: object schemas use interface.\n")
+		b.WriteString("// Fallback: use type only when interface cannot model the shape.\n")
+		b.WriteString("// 默认：对象结构使用 interface。\n")
+		b.WriteString("// 兜底：只有 interface 无法表达时才使用 type。\n")
 		b.WriteString("// =====================================================\n\n")
 	}
 	for _, def := range registry.defs {
