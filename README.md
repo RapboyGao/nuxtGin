@@ -119,9 +119,12 @@ Example shape:
 ```ts
 export class GetUserPost {
   static readonly NAME = "getUser" as const;
+  static readonly SUMMARY = "..." as const;
   static readonly METHOD = "POST" as const;
   static readonly PATH = "/api-go/v1/user/get" as const;
 
+  static pathParamsShape() { ... }
+  static buildURL(...) { ... }
   static requestConfig(...) { ... }
   static async request(...) { ... }
 }
@@ -142,6 +145,24 @@ Generated WS TS includes:
 - `onType(...)` and `onTyped(...)`
 - generated validators + `ensureXxx(...)`
 - optional message-type union aliases when endpoint declares `MessageTypes`
+
+### `TypedWebSocketClient` runtime members
+
+Useful runtime members for UI state and diagnostics:
+
+- `url`
+- `status`: `'connecting' | 'open' | 'closing' | 'closed'`
+- `readyState` (getter)
+- `isOpen` (getter)
+- `lastError`
+- `lastClose`
+- `connectedAt`
+- `closedAt`
+- `messagesSent`
+- `messagesReceived`
+- `reconnectCount`
+
+These values are updated by built-in websocket lifecycle handlers (`open`, `close`, `error`, `message`, `send`, `close()`).
 
 ## 🏷️ `tsdoc` and `tsunion`
 

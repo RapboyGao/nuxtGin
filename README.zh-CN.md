@@ -119,9 +119,12 @@ if err != nil {
 ```ts
 export class GetUserPost {
   static readonly NAME = "getUser" as const;
+  static readonly SUMMARY = "..." as const;
   static readonly METHOD = "POST" as const;
   static readonly PATH = "/api-go/v1/user/get" as const;
 
+  static pathParamsShape() { ... }
+  static buildURL(...) { ... }
   static requestConfig(...) { ... }
   static async request(...) { ... }
 }
@@ -142,6 +145,24 @@ WS 生成结果包含：
 - `onType(...)` 与 `onTyped(...)`
 - 自动生成 validator 与 `ensureXxx(...)`
 - 若声明 `MessageTypes`，会生成消息类型联合别名
+
+### `TypedWebSocketClient` 运行时成员
+
+可直接用于前端状态展示与排障：
+
+- `url`
+- `status`：`'connecting' | 'open' | 'closing' | 'closed'`
+- `readyState`（getter）
+- `isOpen`（getter）
+- `lastError`
+- `lastClose`
+- `connectedAt`
+- `closedAt`
+- `messagesSent`
+- `messagesReceived`
+- `reconnectCount`
+
+这些值会由内置生命周期处理自动更新（`open`、`close`、`error`、`message`、`send`、`close()`）。
 
 ## 🏷️ `tsdoc` 与 `tsunion`
 

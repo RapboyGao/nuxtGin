@@ -68,6 +68,21 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "export class TypedWebSocketClient<") {
 		t.Fatalf("expected class based websocket client generation")
 	}
+	if !strings.Contains(code, "public status: \"connecting\" | \"open\" | \"closing\" | \"closed\" = \"connecting\";") {
+		t.Fatalf("expected websocket client status member generation")
+	}
+	if !strings.Contains(code, "public readonly url: string;") {
+		t.Fatalf("expected websocket client url member generation")
+	}
+	if !strings.Contains(code, "public messagesSent = 0;") || !strings.Contains(code, "public messagesReceived = 0;") {
+		t.Fatalf("expected websocket client message counters generation")
+	}
+	if !strings.Contains(code, "get readyState(): number {") || !strings.Contains(code, "get isOpen(): boolean {") {
+		t.Fatalf("expected websocket client ready-state getters generation")
+	}
+	if !strings.Contains(code, "this.messagesSent += 1;") || !strings.Contains(code, "this.messagesReceived += 1;") {
+		t.Fatalf("expected websocket client counters update logic")
+	}
 	if !strings.Contains(code, "export function validateWsClientMessage(") || !strings.Contains(code, "value is WsClientMessage") {
 		t.Fatalf("expected websocket interface validator generation")
 	}
