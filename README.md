@@ -1,38 +1,23 @@
 # nuxtGin
 
-A Go module that pairs Gin with Nuxt (serve static in production, reverse proxy in development) and provides a typed HTTP endpoint layer with TypeScript client generation.
+🧩 A pragmatic Go toolkit that combines **Gin + Nuxt** and provides a **typed API layer** with **TypeScript client generation** for both HTTP and WebSocket.
 
-## What You Get
+## 🚀 Highlights
 
-- Gin mode auto-detection (dev/prod)
-- Vue/Nuxt serving helper (static or proxy)
-- Typed HTTP endpoints with TS axios client generation
-- Utilities for common server tasks
+- 🛣️ Serve Nuxt in production (static files) and proxy Nuxt in development.
+- 🧠 Strongly-typed HTTP endpoint definition in Go.
+- 🔌 WebSocket endpoint abstraction with typed message handling.
+- 🧾 TypeScript generation with field comments (`tsdoc`) and literal unions (`tsunion`).
+- 🧱 Generated HTTP client now uses **per-endpoint classes** with static metadata.
+- 🎨 Generated TypeScript is auto-formatted (Prettier if available).
 
-## Install
+## 📦 Install
 
 ```bash
 go get github.com/RapboyGao/nuxtGin
 ```
 
-## Quick Start
-
-```go
-package main
-
-import (
-    "github.com/RapboyGao/nuxtGin"
-    "github.com/RapboyGao/nuxtGin/endpoint"
-)
-
-func main() {
-    // Create and run server with your endpoints
-    endpoints := []endpoint.EndpointLike{}
-    nuxtGin.MustRunServer(endpoints)
-}
-```
-
-## Configuration
+## ⚙️ Config
 
 Create `server.config.json` in your project root:
 
@@ -44,72 +29,179 @@ Create `server.config.json` in your project root:
 }
 ```
 
-## HTTP Endpoints + TS Client
-
-Define endpoints and generate TS automatically when you call `ApplyEndpoints`:
+## 🧭 Quick Start
 
 ```go
-api := []endpoint.EndpointLike{
-    endpoint.Endpoint[endpoint.NoParams, endpoint.NoParams, endpoint.NoParams, endpoint.NoParams, endpoint.NoBody, struct{ Ok bool }]{
-        Name:   "Ping",
-        Method: endpoint.HTTPMethodGet,
-        Path:   "/ping",
-        HandlerFunc: func(_ endpoint.NoParams, _ endpoint.NoParams, _ endpoint.NoParams, _ endpoint.NoParams, _ endpoint.NoBody, _ *gin.Context) (endpoint.Response[struct{ Ok bool }], error) {
-            return endpoint.Response[struct{ Ok bool }]{Body: struct{ Ok bool }{Ok: true}}, nil
-        },
-    },
-}
+package main
 
-engine := gin.Default()
-endpoint.ApplyEndpoints(engine, api)
+import (
+    "github.com/RapboyGao/nuxtGin"
+    "github.com/RapboyGao/nuxtGin/endpoint"
+)
+
+func main() {
+    endpoints := []endpoint.EndpointLike{}
+    nuxtGin.MustRunServer(endpoints)
+}
 ```
 
-### Add Field Comments To Generated TS (`tsdoc`)
+## 🧱 HTTP Endpoints + TS Client
 
-`Go` source comments (`// ...`) are not available via reflection at runtime, so use struct tags:
+### 1) Define typed endpoints in Go
 
 ```go
-type User struct {
-    ID   string `json:"id" tsdoc:"Unique user id / 用户唯一标识"`
+package main
+
+import (
+    "github.com/gin-gonic/gin"
+    "github.com/RapboyGao/nuxtGin/endpoint"
+)
+
+type GetUserReq struct {
+    ID     string `json:"id" tsdoc:"Unique user id / 用户唯一标识"`
+    Level  string `json:"level" tsunion:"warning,success,error" tsdoc:"Message level / 消息等级"`
+    Retry  int    `json:"retry" tsunion:"0,1,3" tsdoc:"Retry count / 重试次数"`
+    Strict bool   `json:"strict" tsunion:"true,false" tsdoc:"Strict mode / 严格模式"`
+}
+
+type GetUserResp struct {
     Name string `json:"name" tsdoc:"Display name / 显示名称"`
 }
-```
 
-The generated TypeScript interface will include field comments, for example:
-
-```ts
-/** Unique user id / 用户唯一标识 */
-id: string;
-```
-
-If you need full control of Gin behavior, use `CustomEndpoint`:
-
-```go
-endpoint.CustomEndpoint[endpoint.NoParams, endpoint.NoParams, endpoint.NoParams, endpoint.NoParams, endpoint.NoBody, endpoint.NoBody]{
-    Name:        "Raw",
-    Method:      endpoint.HTTPMethodGet,
-    Path:        "/raw",
-    HandlerFunc: func(ctx *gin.Context) { ctx.String(200, "ok") },
+func buildEndpoints() []endpoint.EndpointLike {
+    return []endpoint.EndpointLike{
+        endpoint.Endpoint[endpoint.NoParams, endpoint.NoParams, endpoint.NoParams, endpoint.NoParams, GetUserReq, GetUserResp]{
+            Name:   "GetUser",
+            Method: endpoint.HTTPMethodPost,
+            Path:   "/user/get",
+            HandlerFunc: func(_ endpoint.NoParams, _ endpoint.NoParams, _ endpoint.NoParams, _ endpoint.NoParams, req GetUserReq, _ *gin.Context) (endpoint.Response[GetUserResp], error) {
+                return endpoint.Response[GetUserResp]{StatusCode: 200, Body: GetUserResp{Name: "Alice"}}, nil
+            },
+        },
+    }
 }
 ```
 
-## Project Layout
+### 2) Register + export TS in one call
 
-```text
-serve_vue.go           # Nuxt serving (static/proxy)
-config.go              # server.config.json loader
-gin_mode.go            # dev/prod detection
-server.go              # CreateServer/RunServer helpers
-endpoint/              # Endpoint + TS generator
-utils/                 # Utility helpers
+```go
+engine := gin.Default()
+_, err := endpoint.ApplyEndpoints(engine, buildEndpoints())
+if err != nil {
+    panic(err)
+}
 ```
 
-## Notes
+Default output:
 
-- Dev mode is used when `node_modules` exists in the project root.
-- TS output defaults to `vue/composables/auto-generated-api.ts`.
-- Starter template: [Nuxt Gin Starter](https://github.com/RapboyGao/nuxt-gin-starter)
+- Base path: `/api-go/v1`
+- TS file: `vue/composables/auto-generated-api.ts`
 
-## License
+## 🧰 Generated HTTP TS Style
+
+Each endpoint generates one class (class name includes method), for example:
+
+- `GetUserPost`
+
+And includes static members/methods:
+
+- `NAME`
+- `SUMMARY`
+- `METHOD`
+- `PATH`
+- `pathParamsShape()`
+- `buildURL(...)`
+- `requestConfig(...)`
+- `request(...)`
+
+Example shape:
+
+```ts
+export class GetUserPost {
+  static readonly NAME = "getUser" as const;
+  static readonly METHOD = "POST" as const;
+  static readonly PATH = "/api-go/v1/user/get" as const;
+
+  static requestConfig(...) { ... }
+  static async request(...) { ... }
+}
+```
+
+## 🔌 WebSocket Endpoints + TS Client
+
+Use `WebSocketEndpoint` / `WebSocketAPI` to register WS routes and export TS client.
+
+Default WS output:
+
+- Base path: `/ws-go/v1`
+- TS file: `vue/composables/auto-generated-ws.ts`
+
+Generated WS TS includes:
+
+- `TypedWebSocketClient<TReceive, TSend, TType>`
+- `onType(...)` and `onTyped(...)`
+- generated validators + `ensureXxx(...)`
+- optional message-type union aliases when endpoint declares `MessageTypes`
+
+## 🏷️ `tsdoc` and `tsunion`
+
+### `tsdoc`
+
+Use on struct fields to generate TSDoc comments.
+
+```go
+Name string `json:"name" tsdoc:"Display name / 显示名称"`
+```
+
+### `tsunion`
+
+Use on fields to generate TS literal unions + runtime validator checks.
+
+Supported Go field kinds:
+
+- `string`
+- `bool`
+- `int/int8/int16/int32`
+- `uint/uint8/uint16/uint32`
+- `float32/float64`
+
+Examples:
+
+```go
+Level  string `json:"level" tsunion:"warning,success,error"`
+Retry  int    `json:"retry" tsunion:"0,1,3"`
+Strict bool   `json:"strict" tsunion:"true,false"`
+```
+
+## 🎨 TS Formatting Behavior
+
+Generated TS is finalized with best-effort formatting:
+
+1. try `prettier --parser typescript`
+2. fallback to `npx prettier --parser typescript`
+3. if both unavailable, keep raw generated output
+
+This never blocks generation.
+
+## 🗂️ Project Layout
+
+```text
+serve_vue.go             # Nuxt serving (static/proxy)
+config.go                # server.config.json loader
+gin_mode.go              # dev/prod mode detection
+server.go                # server bootstrap
+endpoint/                # HTTP/WS endpoint layer + TS generators
+utils/                   # utility helpers
+README.md
+README.zh-CN.md
+```
+
+## 🔎 Notes
+
+- Dev mode is inferred when `node_modules` exists in the project root.
+- If you need fully custom Gin handler behavior, use `CustomEndpoint`.
+- Starter project: [Nuxt Gin Starter](https://github.com/RapboyGao/nuxt-gin-starter)
+
+## 📄 License
 
 MIT

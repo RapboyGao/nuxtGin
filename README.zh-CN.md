@@ -1,21 +1,35 @@
 # nuxtGin
 
-一个 Go 模块，用于将 Gin 与 Nuxt 结合：生产环境提供静态文件，开发环境反向代理 Nuxt，同时提供类型化 HTTP Endpoint 与 TS axios 客户端生成。
+🧩 一个实用的 Go 工具库：组合 **Gin + Nuxt**，并提供 **类型化 API 定义** 与 **TypeScript 客户端生成**（HTTP + WebSocket）。
 
-## 你能得到什么
+## 🚀 核心能力
 
-- Gin 运行模式自动判断（开发/生产）
-- Nuxt 服务（静态/代理）
-- 类型化 HTTP Endpoint + TS 客户端生成
-- 常用工具函数
+- 🛣️ Nuxt 服务：生产环境静态托管，开发环境反向代理。
+- 🧠 Go 端强类型 HTTP Endpoint 定义。
+- 🔌 WebSocket Endpoint 抽象与类型化消息处理。
+- 🧾 TS 生成支持字段注释（`tsdoc`）与字面量联合（`tsunion`）。
+- 🧱 HTTP 生成结果为**每个接口一个 class**，带静态元信息。
+- 🎨 生成后自动排版（可用时走 Prettier）。
 
-## 安装
+## 📦 安装
 
 ```bash
 go get github.com/RapboyGao/nuxtGin
 ```
 
-## 快速开始
+## ⚙️ 配置
+
+在项目根目录创建 `server.config.json`：
+
+```json
+{
+  "ginPort": 8080,
+  "nuxtPort": 3000,
+  "baseUrl": "/"
+}
+```
+
+## 🧭 快速开始
 
 ```go
 package main
@@ -31,84 +45,163 @@ func main() {
 }
 ```
 
-## 配置
+## 🧱 HTTP Endpoint + TS 客户端
 
-在项目根目录创建 `server.config.json`：
-
-```json
-{
-  "ginPort": 8080,
-  "nuxtPort": 3000,
-  "baseUrl": "/"
-}
-```
-
-## HTTP Endpoint + TS 客户端
-
-定义 Endpoint，并在 `ApplyEndpoints` 时生成 TS：
+### 1）在 Go 里定义类型化接口
 
 ```go
-api := []endpoint.EndpointLike{
-    endpoint.Endpoint[endpoint.NoParams, endpoint.NoParams, endpoint.NoParams, endpoint.NoParams, endpoint.NoBody, struct{ Ok bool }]{
-        Name:   "Ping",
-        Method: endpoint.HTTPMethodGet,
-        Path:   "/ping",
-        HandlerFunc: func(_ endpoint.NoParams, _ endpoint.NoParams, _ endpoint.NoParams, _ endpoint.NoParams, _ endpoint.NoBody, _ *gin.Context) (endpoint.Response[struct{ Ok bool }], error) {
-            return endpoint.Response[struct{ Ok bool }]{Body: struct{ Ok bool }{Ok: true}}, nil
-        },
-    },
+package main
+
+import (
+    "github.com/gin-gonic/gin"
+    "github.com/RapboyGao/nuxtGin/endpoint"
+)
+
+type GetUserReq struct {
+    ID     string `json:"id" tsdoc:"唯一用户ID / Unique user id"`
+    Level  string `json:"level" tsunion:"warning,success,error" tsdoc:"消息等级 / Message level"`
+    Retry  int    `json:"retry" tsunion:"0,1,3" tsdoc:"重试次数 / Retry count"`
+    Strict bool   `json:"strict" tsunion:"true,false" tsdoc:"严格模式 / Strict mode"`
 }
 
-engine := gin.Default()
-endpoint.ApplyEndpoints(engine, api)
-```
-
-### 在生成 TS 字段上加注释（`tsdoc`）
-
-`Go` 源码里的普通注释（`// ...`）运行时反射拿不到，请使用 struct tag：
-
-```go
-type User struct {
-    ID   string `json:"id" tsdoc:"唯一用户ID / Unique user id"`
+type GetUserResp struct {
     Name string `json:"name" tsdoc:"显示名称 / Display name"`
 }
-```
 
-生成的 TypeScript interface 会带字段注释，例如：
-
-```ts
-/** 唯一用户ID / Unique user id */
-id: string;
-```
-
-需要完全掌控 Gin 行为时，用 `CustomEndpoint`：
-
-```go
-endpoint.CustomEndpoint[endpoint.NoParams, endpoint.NoParams, endpoint.NoParams, endpoint.NoParams, endpoint.NoBody, endpoint.NoBody]{
-    Name:        "Raw",
-    Method:      endpoint.HTTPMethodGet,
-    Path:        "/raw",
-    HandlerFunc: func(ctx *gin.Context) { ctx.String(200, "ok") },
+func buildEndpoints() []endpoint.EndpointLike {
+    return []endpoint.EndpointLike{
+        endpoint.Endpoint[endpoint.NoParams, endpoint.NoParams, endpoint.NoParams, endpoint.NoParams, GetUserReq, GetUserResp]{
+            Name:   "GetUser",
+            Method: endpoint.HTTPMethodPost,
+            Path:   "/user/get",
+            HandlerFunc: func(_ endpoint.NoParams, _ endpoint.NoParams, _ endpoint.NoParams, _ endpoint.NoParams, req GetUserReq, _ *gin.Context) (endpoint.Response[GetUserResp], error) {
+                return endpoint.Response[GetUserResp]{StatusCode: 200, Body: GetUserResp{Name: "Alice"}}, nil
+            },
+        },
+    }
 }
 ```
 
-## 项目结构
+### 2）一行完成路由注册 + TS 导出
 
-```text
-serve_vue.go           # Nuxt 服务（静态/代理）
-config.go              # server.config.json 读取
-gin_mode.go            # 开发/生产判断
-server.go              # CreateServer/RunServer 封装
-endpoint/              # Endpoint + TS 生成
-utils/                 # 工具函数
+```go
+engine := gin.Default()
+_, err := endpoint.ApplyEndpoints(engine, buildEndpoints())
+if err != nil {
+    panic(err)
+}
 ```
 
-## 说明
+默认值：
 
-- 根目录存在 `node_modules` 时使用开发模式。
-- TS 输出默认路径：`vue/composables/auto-generated-api.ts`。
+- Base path：`/api-go/v1`
+- TS 输出：`vue/composables/auto-generated-api.ts`
+
+## 🧰 HTTP 生成结果（Class 风格）
+
+每个 endpoint 会生成一个 class（类名带 Method），例如：
+
+- `GetUserPost`
+
+类内含以下静态成员/方法：
+
+- `NAME`
+- `SUMMARY`
+- `METHOD`
+- `PATH`
+- `pathParamsShape()`
+- `buildURL(...)`
+- `requestConfig(...)`
+- `request(...)`
+
+示例结构：
+
+```ts
+export class GetUserPost {
+  static readonly NAME = "getUser" as const;
+  static readonly METHOD = "POST" as const;
+  static readonly PATH = "/api-go/v1/user/get" as const;
+
+  static requestConfig(...) { ... }
+  static async request(...) { ... }
+}
+```
+
+## 🔌 WebSocket Endpoint + TS 客户端
+
+使用 `WebSocketEndpoint` / `WebSocketAPI` 注册 WS 路由并导出 TS 客户端。
+
+默认值：
+
+- Base path：`/ws-go/v1`
+- TS 输出：`vue/composables/auto-generated-ws.ts`
+
+WS 生成结果包含：
+
+- `TypedWebSocketClient<TReceive, TSend, TType>`
+- `onType(...)` 与 `onTyped(...)`
+- 自动生成 validator 与 `ensureXxx(...)`
+- 若声明 `MessageTypes`，会生成消息类型联合别名
+
+## 🏷️ `tsdoc` 与 `tsunion`
+
+### `tsdoc`
+
+用于给生成的 TS 字段写注释：
+
+```go
+Name string `json:"name" tsdoc:"显示名称 / Display name"`
+```
+
+### `tsunion`
+
+用于生成 TS 字面量联合 + 运行时校验。
+
+支持的 Go 字段类型：
+
+- `string`
+- `bool`
+- `int/int8/int16/int32`
+- `uint/uint8/uint16/uint32`
+- `float32/float64`
+
+示例：
+
+```go
+Level  string `json:"level" tsunion:"warning,success,error"`
+Retry  int    `json:"retry" tsunion:"0,1,3"`
+Strict bool   `json:"strict" tsunion:"true,false"`
+```
+
+## 🎨 TS 排版策略
+
+生成完成后会尽力格式化：
+
+1. 先尝试 `prettier --parser typescript`
+2. 若失败，回退到 `npx prettier --parser typescript`
+3. 都不可用则保留原始生成文本
+
+格式化失败不会阻塞生成。
+
+## 🗂️ 项目结构
+
+```text
+serve_vue.go             # Nuxt 服务（静态/代理）
+config.go                # server.config.json 读取
+gin_mode.go              # 开发/生产模式判断
+server.go                # 服务启动封装
+endpoint/                # HTTP/WS Endpoint 与 TS 生成器
+utils/                   # 工具函数
+README.md
+README.zh-CN.md
+```
+
+## 🔎 说明
+
+- 根目录存在 `node_modules` 时会进入开发模式。
+- 若需要完全自定义 Gin 行为，可使用 `CustomEndpoint`。
 - 模板项目：[Nuxt Gin Starter](https://github.com/RapboyGao/nuxt-gin-starter)
 
-## 许可证
+## 📄 许可证
 
 MIT
