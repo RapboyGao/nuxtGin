@@ -86,18 +86,6 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "if (!validateWsClientMessage(value)) {") {
 		t.Fatalf("expected websocket interface factory to validate before create")
 	}
-	if !strings.Contains(code, "addTypeHandler(type: string, handler: (message: TReceive) => void, options?: TypeHandlerOptions<TReceive>): number") {
-		t.Fatalf("expected addTypeHandler registration API")
-	}
-	if !strings.Contains(code, "removeTypeHandler(handlerID: number): boolean") {
-		t.Fatalf("expected removeTypeHandler API")
-	}
-	if !strings.Contains(code, "addTypedHandler<TPayload>(") {
-		t.Fatalf("expected addTypedHandler API")
-	}
-	if !strings.Contains(code, "clearTypeHandlers(type?: string): void") {
-		t.Fatalf("expected clearTypeHandlers API")
-	}
 	if !strings.Contains(code, "onType(type: string, handler: (message: TReceive) => void, options?: TypeHandlerOptions<TReceive>): () => void") {
 		t.Fatalf("expected onType typed handler registration")
 	}

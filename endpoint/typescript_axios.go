@@ -329,20 +329,6 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 		b.WriteString("    .join('; ');\n\n")
 	}
 
-	for _, def := range registry.defs {
-		b.WriteString("export interface ")
-		b.WriteString(def.Name)
-		b.WriteString(" {\n")
-		if def.Body != "" {
-			b.WriteString(def.Body)
-		}
-		b.WriteString("}\n\n")
-		if strings.TrimSpace(def.Validator) != "" {
-			b.WriteString(def.Validator)
-			b.WriteString("\n")
-		}
-	}
-
 	for _, m := range metas {
 		if m.APIDescription != "" || m.RequestDesc != "" || m.ResponseDesc != "" {
 			b.WriteString("/**\n")
@@ -499,6 +485,30 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 			}
 		}
 		b.WriteString("}\n\n")
+	}
+
+	if len(registry.defs) > 0 {
+		b.WriteString("// =====================================================\n")
+		b.WriteString("// INTERFACES & VALIDATORS\n")
+		b.WriteString("// =====================================================\n\n")
+	}
+	for _, def := range registry.defs {
+		b.WriteString("// -----------------------------------------------------\n")
+		b.WriteString("// TYPE: ")
+		b.WriteString(def.Name)
+		b.WriteString("\n")
+		b.WriteString("// -----------------------------------------------------\n")
+		b.WriteString("export interface ")
+		b.WriteString(def.Name)
+		b.WriteString(" {\n")
+		if def.Body != "" {
+			b.WriteString(def.Body)
+		}
+		b.WriteString("}\n\n")
+		if strings.TrimSpace(def.Validator) != "" {
+			b.WriteString(def.Validator)
+			b.WriteString("\n")
+		}
 	}
 
 	return strings.TrimSpace(b.String()) + "\n", nil
@@ -698,6 +708,14 @@ func renderStructBodyByType(t reflect.Type, registry *tsInterfaceRegistry) (stri
 
 func renderStructValidatorByType(t reflect.Type, registry *tsInterfaceRegistry, interfaceName string) (string, error) {
 	var b strings.Builder
+	b.WriteString("/**\n")
+	b.WriteString(" * Validate whether a value matches ")
+	b.WriteString(interfaceName)
+	b.WriteString(".\n")
+	b.WriteString(" * 校验一个值是否符合 ")
+	b.WriteString(interfaceName)
+	b.WriteString(" 结构。\n")
+	b.WriteString(" */\n")
 	b.WriteString("export function validate")
 	b.WriteString(interfaceName)
 	b.WriteString("(value: unknown): value is ")
@@ -1071,8 +1089,11 @@ func pathParamFieldMap(t reflect.Type) map[string]string {
 			name = f.Name
 		}
 		out[strings.ToLower(name)] = name
-		// also map the raw field name for safety
-		out[strings.ToLower(f.Name)] = f.Name
+		// keep json tag name as priority; only fallback to raw field name when missing
+		rawKey := strings.ToLower(f.Name)
+		if _, exists := out[rawKey]; !exists {
+			out[rawKey] = f.Name
+		}
 	}
 	return out
 }
