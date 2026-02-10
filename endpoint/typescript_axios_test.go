@@ -18,6 +18,10 @@ type PathByUpperID struct {
 	ID string `json:"ID" tsdoc:"路径ID(大写) / Uppercase path identifier"`
 }
 
+type PathByURIID struct {
+	ID string `uri:"id" tsdoc:"路径ID(uri) / URI path identifier"`
+}
+
 type GetPersonReq struct {
 	PersonID    string  `json:"personID" tsdoc:"人员ID / Person identifier"`
 	Level       string  `json:"level" tsunion:"warning,success,error" tsdoc:"消息等级 / Message level"`
@@ -91,6 +95,15 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 			Path:        "/PersonByLower/:id",
 			Description: "Get person by lowercase path param but uppercase field.",
 			HandlerFunc: func(path PathByUpperID, _ NoParams, _ NoParams, _ NoParams, _ NoBody, _ *gin.Context) (Response[PersonDetailResp], error) {
+				return Response[PersonDetailResp]{StatusCode: 200}, nil
+			},
+		},
+		Endpoint[PathByURIID, NoParams, NoParams, NoParams, NoBody, PersonDetailResp]{
+			Name:        "GetPersonByURIPath",
+			Method:      HTTPMethodGet,
+			Path:        "/PersonByURI/:id",
+			Description: "Get person by uri-tag path param.",
+			HandlerFunc: func(path PathByURIID, _ NoParams, _ NoParams, _ NoParams, _ NoBody, _ *gin.Context) (Response[PersonDetailResp], error) {
 				return Response[PersonDetailResp]{StatusCode: 200}, nil
 			},
 		},
@@ -171,6 +184,12 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	}
 	if !strings.Contains(code, `params.path?.ID ?? ""`) {
 		t.Fatalf("expected buildURL to use mapped struct field ID")
+	}
+	if !strings.Contains(code, "export class GetPersonByURIPathGet {") {
+		t.Fatalf("expected class generation for uri-tag path placeholder endpoint")
+	}
+	if !strings.Contains(code, "PersonByURI") || !strings.Contains(code, "params.path?.ID ?? \"\"") {
+		t.Fatalf("expected uri-tag endpoint to interpolate path param with original casing (ID)")
 	}
 	if !strings.Contains(code, "normalizeParamKeys") {
 		t.Fatalf("expected param key normalization helper")
