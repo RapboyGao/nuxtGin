@@ -38,6 +38,9 @@ func (s ServerAPI) BuildGinGroup(engine *gin.Engine) (*gin.RouterGroup, error) {
 // ExportTS 会生成 axios TypeScript 到相对路径；
 // 若 relativeTSPath 为空，则默认 vue/composables/my-schemas.ts。
 func (s ServerAPI) ExportTS(relativeTSPath string) error {
+	if !shouldExportTSInCurrentEnv() {
+		return nil
+	}
 	if strings.TrimSpace(relativeTSPath) == "" {
 		relativeTSPath = "vue/composables/my-schemas.ts"
 	}

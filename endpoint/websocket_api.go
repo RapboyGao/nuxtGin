@@ -35,6 +35,9 @@ func (s WebSocketAPI) BuildGinGroup(engine *gin.Engine) (*gin.RouterGroup, error
 // ExportTS generates websocket TypeScript to a relative path.
 // ExportTS 会生成 websocket TypeScript 到相对路径。
 func (s WebSocketAPI) ExportTS(relativeTSPath string) error {
+	if !shouldExportTSInCurrentEnv() {
+		return nil
+	}
 	if strings.TrimSpace(relativeTSPath) == "" {
 		relativeTSPath = "vue/composables/auto-generated-ws.ts"
 	}
