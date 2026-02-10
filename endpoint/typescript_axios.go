@@ -688,7 +688,42 @@ func buildTSURLExprWithBaseAndMap(baseURL string, path string, fieldMap map[stri
 }
 
 func pathParamFieldMap(t reflect.Type) map[string]string {
-	return paramFieldMapWithPrimaryTag(t, "uri")
+	out := map[string]string{}
+	if t == nil || t.Kind() == reflect.Invalid {
+		return out
+	}
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return out
+	}
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.PkgPath != "" {
+			continue
+		}
+		externalName, ok := resolveParamFieldName(f, "uri")
+		if !ok {
+			continue
+		}
+		if externalName == "" {
+			externalName = f.Name
+		}
+		tsFieldName, _, tsOK := jsonFieldMeta(f)
+		if !tsOK {
+			continue
+		}
+		if tsFieldName == "" {
+			tsFieldName = f.Name
+		}
+		out[strings.ToLower(externalName)] = tsFieldName
+		rawKey := strings.ToLower(f.Name)
+		if _, exists := out[rawKey]; !exists {
+			out[rawKey] = tsFieldName
+		}
+	}
+	return out
 }
 
 func queryParamFieldMap(t reflect.Type) map[string]string {
