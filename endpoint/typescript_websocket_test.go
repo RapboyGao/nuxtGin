@@ -77,6 +77,18 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "public messagesSent = 0;") || !strings.Contains(code, "public messagesReceived = 0;") {
 		t.Fatalf("expected websocket client message counters generation")
 	}
+	if !strings.Contains(code, "window.location.hostname}:${resolveGinPort()}") {
+		t.Fatalf("expected websocket dev-mode host with ginPort generation")
+	}
+	if !strings.Contains(code, "__NUXT__?.config?.public?.ginPort") {
+		t.Fatalf("expected websocket ginPort to read from nuxt runtimeConfig public")
+	}
+	if !strings.Contains(code, "nuxtIsDevelopment") || !strings.Contains(code, "isDevelopment") {
+		t.Fatalf("expected websocket env mode to read from nuxt runtimeConfig public")
+	}
+	if !strings.Contains(code, "`${protocol}://${window.location.host}${url}`") {
+		t.Fatalf("expected websocket prod-mode URL to follow browser host")
+	}
 	if !strings.Contains(code, "get readyState(): number {") || !strings.Contains(code, "get isOpen(): boolean {") {
 		t.Fatalf("expected websocket client ready-state getters generation")
 	}
