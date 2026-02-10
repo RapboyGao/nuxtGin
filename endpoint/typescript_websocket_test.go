@@ -80,11 +80,11 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "window.location.hostname}:${resolveGinPort()}") {
 		t.Fatalf("expected websocket dev-mode host with ginPort generation")
 	}
-	if !strings.Contains(code, "__NUXT__?.config?.public?.ginPort") {
+	if !strings.Contains(code, "(globalThis as any).useRuntimeConfig?.()?.public") {
 		t.Fatalf("expected websocket ginPort to read from nuxt runtimeConfig public")
 	}
-	if !strings.Contains(code, "nuxtIsDevelopment") || !strings.Contains(code, "isDevelopment") {
-		t.Fatalf("expected websocket env mode to read from nuxt runtimeConfig public")
+	if !strings.Contains(code, "(import.meta as any).env?.DEV") {
+		t.Fatalf("expected websocket env mode to read from import.meta env")
 	}
 	if !strings.Contains(code, "`${protocol}://${window.location.host}${url}`") {
 		t.Fatalf("expected websocket prod-mode URL to follow browser host")
