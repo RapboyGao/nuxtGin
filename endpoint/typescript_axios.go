@@ -245,6 +245,39 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 	b.WriteString("  return out;\n")
 	b.WriteString("};\n\n")
 	writeTSMarkerEnd(&b, "Runtime Helpers")
+
+	if len(registry.defs) > 0 {
+		writeTSMarker(&b, "Interfaces & Validators")
+		b.WriteString("// =====================================================\n")
+		b.WriteString("// INTERFACES & VALIDATORS\n")
+		b.WriteString("// Default: object schemas use interface.\n")
+		b.WriteString("// Fallback: use type only when interface cannot model the shape.\n")
+		b.WriteString("// 默认：对象结构使用 interface。\n")
+		b.WriteString("// 兜底：只有 interface 无法表达时才使用 type。\n")
+		b.WriteString("// =====================================================\n\n")
+	}
+	for _, def := range registry.defs {
+		b.WriteString("// -----------------------------------------------------\n")
+		b.WriteString("// TYPE: ")
+		b.WriteString(def.Name)
+		b.WriteString("\n")
+		b.WriteString("// -----------------------------------------------------\n")
+		b.WriteString("export interface ")
+		b.WriteString(def.Name)
+		b.WriteString(" {\n")
+		if def.Body != "" {
+			b.WriteString(def.Body)
+		}
+		b.WriteString("}\n\n")
+		if strings.TrimSpace(def.Validator) != "" {
+			b.WriteString(def.Validator)
+			b.WriteString("\n")
+		}
+	}
+	if len(registry.defs) > 0 {
+		writeTSMarkerEnd(&b, "Interfaces & Validators")
+	}
+
 	writeTSMarker(&b, "Endpoint Classes")
 
 	needsCookieHelper := false
@@ -501,43 +534,44 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 				b.WriteString(m.ResponseType)
 				b.WriteString(";\n")
 			}
+			}
+			b.WriteString("  }\n")
+			b.WriteString("}\n\n")
+			b.WriteString("export async function request")
+			b.WriteString(className)
+			b.WriteString("(")
+			b.WriteString(strings.Join(args, ", "))
+			if len(args) > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString("options?: AxiosConvertOptions<")
+			if m.HasReqBody {
+				b.WriteString(m.RequestType)
+			} else {
+				b.WriteString("never")
+			}
+			b.WriteString(", ")
+			b.WriteString(m.ResponseType)
+			b.WriteString(">")
+			b.WriteString("): Promise<")
+			b.WriteString(m.ResponseType)
+			b.WriteString("> {\n")
+			wrapperCallArgs := make([]string, 0, 3)
+			if m.HasParams {
+				wrapperCallArgs = append(wrapperCallArgs, "params")
+			}
+			if m.HasReqBody {
+				wrapperCallArgs = append(wrapperCallArgs, "requestBody")
+			}
+			wrapperCallArgs = append(wrapperCallArgs, "options")
+			b.WriteString("  return ")
+			b.WriteString(className)
+			b.WriteString(".request(")
+			b.WriteString(strings.Join(wrapperCallArgs, ", "))
+			b.WriteString(");\n")
+			b.WriteString("}\n\n")
 		}
-		b.WriteString("  }\n")
-		b.WriteString("}\n\n")
-	}
 	writeTSMarkerEnd(&b, "Endpoint Classes")
-
-	if len(registry.defs) > 0 {
-		writeTSMarker(&b, "Interfaces & Validators")
-		b.WriteString("// =====================================================\n")
-		b.WriteString("// INTERFACES & VALIDATORS\n")
-		b.WriteString("// Default: object schemas use interface.\n")
-		b.WriteString("// Fallback: use type only when interface cannot model the shape.\n")
-		b.WriteString("// 默认：对象结构使用 interface。\n")
-		b.WriteString("// 兜底：只有 interface 无法表达时才使用 type。\n")
-		b.WriteString("// =====================================================\n\n")
-	}
-	for _, def := range registry.defs {
-		b.WriteString("// -----------------------------------------------------\n")
-		b.WriteString("// TYPE: ")
-		b.WriteString(def.Name)
-		b.WriteString("\n")
-		b.WriteString("// -----------------------------------------------------\n")
-		b.WriteString("export interface ")
-		b.WriteString(def.Name)
-		b.WriteString(" {\n")
-		if def.Body != "" {
-			b.WriteString(def.Body)
-		}
-		b.WriteString("}\n\n")
-		if strings.TrimSpace(def.Validator) != "" {
-			b.WriteString(def.Validator)
-			b.WriteString("\n")
-		}
-	}
-	if len(registry.defs) > 0 {
-		writeTSMarkerEnd(&b, "Interfaces & Validators")
-	}
 
 	return finalizeTypeScriptCode(b.String()), nil
 }

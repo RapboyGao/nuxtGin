@@ -170,6 +170,9 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	if !strings.Contains(code, "static async request(") {
 		t.Fatalf("expected endpoint class static request method generation")
 	}
+	if !strings.Contains(code, "export async function requestGetPersonByIDGet(") || !strings.Contains(code, "return GetPersonByIDGet.request(") {
+		t.Fatalf("expected generated convenience request function for endpoint class")
+	}
 	if !strings.Contains(code, "return ListPeopleGet.PATH;") {
 		t.Fatalf("expected static PATH usage via class name for endpoints without path placeholders in buildURL")
 	}
@@ -353,6 +356,9 @@ func TestGenerateAxiosFromEndpoints_CustomEndpoint_ExportTSFile(t *testing.T) {
 
 	if !strings.Contains(code, "export class SubmitOrderCustomPost {") {
 		t.Fatalf("expected class generation for custom endpoint")
+	}
+	if !strings.Contains(code, "export async function requestSubmitOrderCustomPost(") || !strings.Contains(code, "return SubmitOrderCustomPost.request(") {
+		t.Fatalf("expected generated convenience request function for custom endpoint class")
 	}
 	if !strings.Contains(code, "toFormUrlEncoded") {
 		t.Fatalf("expected form-urlencoded helper usage for custom endpoint")

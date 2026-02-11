@@ -165,7 +165,10 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 		t.Fatalf("expected message type union alias generation")
 	}
 	if strings.Contains(code, "export function chatEvents<TSend =") {
-		t.Fatalf("expected endpoint factory function to be removed")
+		t.Fatalf("expected legacy endpoint factory function to be removed")
+	}
+	if !strings.Contains(code, "export function createChatEvents<TSend =") || !strings.Contains(code, "return new ChatEvents<TSend>(options);") {
+		t.Fatalf("expected generated convenience create function for endpoint class")
 	}
 	if !strings.Contains(code, "onRoomJoinType(") || !strings.Contains(code, "onChatTextType(") || !strings.Contains(code, "onSystemAckType(") {
 		t.Fatalf("expected endpoint-specific on<Type>Type helpers")
