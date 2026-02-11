@@ -1,4 +1,4 @@
-package nuxtGin
+package runtime
 
 import (
 	"fmt"

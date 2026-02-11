@@ -1,4 +1,4 @@
-package nuxtGin
+package runtime
 
 import (
 	"github.com/RapboyGao/nuxtGin/utils"
