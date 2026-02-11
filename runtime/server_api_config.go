@@ -89,17 +89,13 @@ func (c APIServerConfig) normalized() APIServerConfig {
 		out.SchemaTSPath = "vue/composables/auto-generated-shared.ts"
 	}
 
-	if strings.TrimSpace(out.ServerAPI.BasePath) == "" {
-		out.ServerAPI.BasePath = "/api-go/v1"
+	if strings.TrimSpace(out.ServerAPI.BasePath) == "" && strings.TrimSpace(out.ServerAPI.GroupPath) == "" {
+		out.ServerAPI.BasePath = "/api-go"
+		out.ServerAPI.GroupPath = "/v1"
 	}
-	if strings.TrimSpace(out.ServerAPI.GroupPath) == "" {
-		out.ServerAPI.GroupPath = out.ServerAPI.BasePath
-	}
-	if strings.TrimSpace(out.WebSocketAPI.BasePath) == "" {
-		out.WebSocketAPI.BasePath = "/ws-go/v1"
-	}
-	if strings.TrimSpace(out.WebSocketAPI.GroupPath) == "" {
-		out.WebSocketAPI.GroupPath = out.WebSocketAPI.BasePath
+	if strings.TrimSpace(out.WebSocketAPI.BasePath) == "" && strings.TrimSpace(out.WebSocketAPI.GroupPath) == "" {
+		out.WebSocketAPI.BasePath = "/ws-go"
+		out.WebSocketAPI.GroupPath = "/v1"
 	}
 	return out
 }

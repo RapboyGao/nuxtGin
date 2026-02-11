@@ -131,8 +131,13 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	}
 
 	outPath := filepath.Join(".generated", "schema", "http", "server_api.ts")
-	if err := ExportAxiosFromEndpointsToTSFile("/api/v1", apis, outPath); err != nil {
-		t.Fatalf("ExportAxiosFromEndpointsToTSFile returned error: %v", err)
+	httpAPI := ServerAPI{
+		BasePath:  "/api",
+		GroupPath: "/v1",
+		Endpoints: apis,
+	}
+	if err := httpAPI.ExportTS(outPath); err != nil {
+		t.Fatalf("ServerAPI.ExportTS returned error: %v", err)
 	}
 
 	data, err := os.ReadFile(filepath.Join(moduleRoot, outPath))
@@ -167,6 +172,9 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	}
 	if !strings.Contains(code, "static readonly PATHS =") || !strings.Contains(code, "static readonly FULL_PATH =") || !strings.Contains(code, "/api/v1/Person/:ID") {
 		t.Fatalf("expected endpoint class static PATHS/FULL_PATH generation")
+	}
+	if !strings.Contains(code, `base: "/api"`) || !strings.Contains(code, `group: "/v1"`) {
+		t.Fatalf("expected endpoint class PATHS to preserve base/group from ServerAPI")
 	}
 	if !strings.Contains(code, "static async request(") {
 		t.Fatalf("expected endpoint class static request method generation")
@@ -269,7 +277,7 @@ func TestGenerateAxiosFromEndpoints_Int64AsStringMode(t *testing.T) {
 		},
 	}
 
-	code, err := GenerateAxiosFromEndpoints("/api", apis)
+	code, err := generateAxiosFromEndpoints("/api", "/v1", apis)
 	if err != nil {
 		t.Fatalf("GenerateAxiosFromEndpoints returned error: %v", err)
 	}
@@ -290,7 +298,7 @@ func TestGenerateAxiosFromEndpoints_ValidationError(t *testing.T) {
 		},
 	}
 
-	_, err := GenerateAxiosFromEndpoints("/api", apis)
+	_, err := generateAxiosFromEndpoints("/api", "/v1", apis)
 	if err == nil {
 		t.Fatalf("expected validation error for missing path params type")
 	}
@@ -348,8 +356,13 @@ func TestGenerateAxiosFromEndpoints_CustomEndpoint_ExportTSFile(t *testing.T) {
 	}
 
 	outPath := filepath.Join(".generated", "schema", "custom", "custom_endpoint_api.ts")
-	if err := ExportAxiosFromEndpointsToTSFile("/api/v2", []EndpointLike{custom}, outPath); err != nil {
-		t.Fatalf("ExportAxiosFromEndpointsToTSFile returned error: %v", err)
+	customAPI := ServerAPI{
+		BasePath:  "/api",
+		GroupPath: "/v2",
+		Endpoints: []EndpointLike{custom},
+	}
+	if err := customAPI.ExportTS(outPath); err != nil {
+		t.Fatalf("ServerAPI.ExportTS returned error: %v", err)
 	}
 
 	data, err := os.ReadFile(filepath.Join(moduleRoot, outPath))
@@ -427,7 +440,7 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 		MessageTypes:      []string{"room:join", "chat:text", "system:ack"},
 	}
 
-	code, err := GenerateWebSocketClientFromEndpoints("/ws/v1", []WebSocketEndpointLike{ws})
+	code, err := generateWebSocketClientFromEndpoints("/ws", "/v1", []WebSocketEndpointLike{ws})
 	if err != nil {
 		t.Fatalf("GenerateWebSocketClientFromEndpoints returned error: %v", err)
 	}
@@ -586,8 +599,13 @@ func TestGenerateWebSocketClientFromEndpoints_ExportFile(t *testing.T) {
 	}
 
 	outPath := filepath.Join(".generated", "schema", "sockets", "ws_client.ts")
-	if err := ExportWebSocketClientFromEndpointsToTSFile("/ws/v1", []WebSocketEndpointLike{ws}, outPath); err != nil {
-		t.Fatalf("ExportWebSocketClientFromEndpointsToTSFile returned error: %v", err)
+	wsAPI := WebSocketAPI{
+		BasePath:  "/ws",
+		GroupPath: "/v1",
+		Endpoints: []WebSocketEndpointLike{ws},
+	}
+	if err := wsAPI.ExportTS(outPath); err != nil {
+		t.Fatalf("WebSocketAPI.ExportTS returned error: %v", err)
 	}
 
 	data, err := os.ReadFile(filepath.Join(moduleRoot, outPath))
@@ -623,8 +641,8 @@ func TestExportUnifiedAPIsToTSFiles(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(cwd) })
 
 	server := ServerAPI{
-		BasePath:  "/api/v1",
-		GroupPath: "/api/v1",
+		BasePath:  "/api",
+		GroupPath: "/v1",
 		Endpoints: []EndpointLike{
 			Endpoint[PathByURIID, NoParams, NoParams, NoParams, NoBody, PersonDetailResp]{
 				Name:   "GetPersonByURIPath",
@@ -637,8 +655,8 @@ func TestExportUnifiedAPIsToTSFiles(t *testing.T) {
 		},
 	}
 	ws := WebSocketAPI{
-		BasePath:  "/ws/v1",
-		GroupPath: "/ws/v1",
+		BasePath:  "/ws",
+		GroupPath: "/v1",
 		Endpoints: []WebSocketEndpointLike{
 			&WebSocketEndpoint{
 				Name:              "chat_events",
