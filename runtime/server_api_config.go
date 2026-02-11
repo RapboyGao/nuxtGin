@@ -62,6 +62,7 @@ func DefaultAPIServerConfig(
 	}
 	if GetGinMode() == gin.DebugMode {
 		defaultCorsConfig := cors.DefaultConfig()
+		defaultCorsConfig.AllowAllOrigins = true
 		config.CORS = &defaultCorsConfig
 	}
 	return config
@@ -114,7 +115,11 @@ func BuildServerFromConfig(cfg APIServerConfig) (*gin.Engine, error) {
 
 	engine := newGinEngine()
 	if cfg.CORS != nil {
-		engine.Use(cors.New(*cfg.CORS))
+		corsCfg := *cfg.CORS
+		if err := corsCfg.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid CORS config: %w", err)
+		}
+		engine.Use(cors.New(corsCfg))
 	}
 	ServeVue(engine)
 
