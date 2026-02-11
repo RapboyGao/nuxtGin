@@ -36,7 +36,7 @@ type axiosFuncMeta struct {
 	ResponseKind     TSKind
 }
 
-func generateAxiosFromEndpoints(baseURL string, endpoints []EndpointLike) (string, error) {
+func generateAxiosFromEndpoints(basePath string, groupPath string, endpoints []EndpointLike) (string, error) {
 	registry := newTSInterfaceRegistry()
 	metas := make([]axiosFuncMeta, 0, len(endpoints))
 
@@ -136,10 +136,10 @@ func generateAxiosFromEndpoints(baseURL string, endpoints []EndpointLike) (strin
 		metas = append(metas, fnMeta)
 	}
 
-	return renderAxiosTS(baseURL, registry, metas)
+	return renderAxiosTS(basePath, groupPath, registry, metas)
 }
 
-func exportAxiosFromEndpointsToTSFile(baseURL string, endpoints []EndpointLike, relativeTSPath string) error {
+func exportAxiosFromEndpointsToTSFile(basePath string, groupPath string, endpoints []EndpointLike, relativeTSPath string) error {
 	if strings.TrimSpace(relativeTSPath) == "" {
 		return fmt.Errorf("relative ts path is required")
 	}
@@ -147,7 +147,7 @@ func exportAxiosFromEndpointsToTSFile(baseURL string, endpoints []EndpointLike, 
 		return fmt.Errorf("ts file path must be relative to cwd")
 	}
 
-	code, err := generateAxiosFromEndpoints(baseURL, endpoints)
+	code, err := generateAxiosFromEndpoints(basePath, groupPath, endpoints)
 	if err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func exportAxiosFromEndpointsToTSFile(baseURL string, endpoints []EndpointLike, 
 	return os.WriteFile(fullPath, []byte(code), 0o644)
 }
 
-func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosFuncMeta) (string, error) {
+func renderAxiosTS(basePath string, groupPath string, registry *tsInterfaceRegistry, metas []axiosFuncMeta) (string, error) {
 	var b strings.Builder
 	writeTSBanner(&b, "Nuxt Gin HTTP API Client (Axios)")
 	writeTSMarker(&b, "Imports")
@@ -272,6 +272,28 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 		if strings.TrimSpace(def.Validator) != "" {
 			b.WriteString(def.Validator)
 			b.WriteString("\n")
+			b.WriteString("/**\n")
+			b.WriteString(" * Ensure a typed ")
+			b.WriteString(def.Name)
+			b.WriteString(" after validation.\n")
+			b.WriteString(" * 先校验，再确保得到类型化的 ")
+			b.WriteString(def.Name)
+			b.WriteString("。\n")
+			b.WriteString(" */\n")
+			b.WriteString("export function ensure")
+			b.WriteString(def.Name)
+			b.WriteString("(value: unknown): ")
+			b.WriteString(def.Name)
+			b.WriteString(" {\n")
+			b.WriteString("  if (!validate")
+			b.WriteString(def.Name)
+			b.WriteString("(value)) {\n")
+			b.WriteString("    throw new Error('Invalid ")
+			b.WriteString(def.Name)
+			b.WriteString("');\n")
+			b.WriteString("  }\n")
+			b.WriteString("  return value;\n")
+			b.WriteString("}\n\n")
 		}
 	}
 	if len(registry.defs) > 0 {
@@ -294,9 +316,12 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 		b.WriteString("    .join('; ');\n\n")
 	}
 
+	fullBasePath := normalizePathSegment(basePath)
+	fullGroupPath := normalizePathSegment(groupPath)
 	for _, m := range metas {
 		className := toUpperCamel(m.FuncName) + toUpperCamel(strings.ToLower(m.Method))
-		fullPath := joinURLPath(baseURL, m.Path)
+		fullPathPrefix := resolveAPIPath(fullBasePath, fullGroupPath)
+		fullPath := joinURLPath(fullPathPrefix, m.Path)
 		hasPathPlaceholders := len(extractPathParams(m.Path)) > 0
 		pathParamNames := extractPathParams(m.Path)
 		mappedPathParamNames := make([]string, 0, len(pathParamNames))
@@ -344,7 +369,18 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 		b.WriteString("  static readonly METHOD = '")
 		b.WriteString(m.Method)
 		b.WriteString("' as const;\n")
-		b.WriteString("  static readonly PATH = '")
+		b.WriteString("  static readonly PATHS = {\n")
+		b.WriteString("    base: '")
+		b.WriteString(strings.ReplaceAll(fullBasePath, "'", "\\'"))
+		b.WriteString("',\n")
+		b.WriteString("    group: '")
+		b.WriteString(strings.ReplaceAll(fullGroupPath, "'", "\\'"))
+		b.WriteString("',\n")
+		b.WriteString("    api: '")
+		b.WriteString(strings.ReplaceAll(m.Path, "'", "\\'"))
+		b.WriteString("',\n")
+		b.WriteString("  } as const;\n")
+		b.WriteString("  static readonly FULL_PATH = '")
 		b.WriteString(strings.ReplaceAll(fullPath, "'", "\\'"))
 		b.WriteString("' as const;\n\n")
 		args := make([]string, 0, 3)
@@ -376,13 +412,13 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 			b.WriteString(m.ParamsType)
 			b.WriteString("): string {\n")
 			b.WriteString("    return ")
-			b.WriteString(buildTSURLExprWithBaseAndMap(baseURL, m.Path, m.PathParamMap))
+			b.WriteString(buildTSURLExprWithBaseAndMap(fullPathPrefix, m.Path, m.PathParamMap))
 			b.WriteString(";\n")
 		} else {
 			b.WriteString("(): string {\n")
 			b.WriteString("    return ")
 			b.WriteString(className)
-			b.WriteString(".PATH;\n")
+			b.WriteString(".FULL_PATH;\n")
 		}
 		b.WriteString("  }\n\n")
 		requestConfigArgs := make([]string, 0, 3)

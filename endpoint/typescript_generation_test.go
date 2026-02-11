@@ -165,8 +165,8 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	if !strings.Contains(code, "axiosClient.request<PersonDetailResp>(") || !strings.Contains(code, "GetPersonByIDGet.requestConfig(") {
 		t.Fatalf("expected request to reuse requestConfig via class name")
 	}
-	if !strings.Contains(code, "static readonly PATH =") || !strings.Contains(code, "/api/v1/Person/:ID") {
-		t.Fatalf("expected endpoint class static PATH generation")
+	if !strings.Contains(code, "static readonly PATHS =") || !strings.Contains(code, "static readonly FULL_PATH =") || !strings.Contains(code, "/api/v1/Person/:ID") {
+		t.Fatalf("expected endpoint class static PATHS/FULL_PATH generation")
 	}
 	if !strings.Contains(code, "static async request(") {
 		t.Fatalf("expected endpoint class static request method generation")
@@ -174,8 +174,8 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	if !strings.Contains(code, "export async function requestGetPersonByIDGet(") || !strings.Contains(code, "return GetPersonByIDGet.request(") {
 		t.Fatalf("expected generated convenience request function for endpoint class")
 	}
-	if !strings.Contains(code, "return ListPeopleGet.PATH;") {
-		t.Fatalf("expected static PATH usage via class name for endpoints without path placeholders in buildURL")
+	if !strings.Contains(code, "return ListPeopleGet.FULL_PATH;") {
+		t.Fatalf("expected static FULL_PATH usage via class name for endpoints without path placeholders in buildURL")
 	}
 	if !strings.Contains(code, "params: {") || !strings.Contains(code, "ID: string;") {
 		t.Fatalf("expected inline path params type to preserve casing")
@@ -209,6 +209,9 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	}
 	if !strings.Contains(code, "export function validateGetPersonReq(") || !strings.Contains(code, "value is GetPersonReq") {
 		t.Fatalf("expected interface validator generation")
+	}
+	if !strings.Contains(code, "export function ensureGetPersonReq(") || !strings.Contains(code, "): GetPersonReq") {
+		t.Fatalf("expected interface ensure function generation")
 	}
 	if !strings.Contains(code, `if (!("personID" in obj)) return false;`) {
 		t.Fatalf("expected required-field validation generation")

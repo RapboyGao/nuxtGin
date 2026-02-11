@@ -22,16 +22,16 @@ type wsFuncMeta struct {
 // GenerateWebSocketClientFromEndpoints generates TypeScript websocket client source code from endpoints.
 // GenerateWebSocketClientFromEndpoints 根据 WebSocketEndpoint 列表生成 TypeScript 客户端代码。
 func GenerateWebSocketClientFromEndpoints(baseURL string, endpoints []WebSocketEndpointLike) (string, error) {
-	return generateWebSocketClientFromEndpoints(baseURL, endpoints)
+	return generateWebSocketClientFromEndpoints(baseURL, "", endpoints)
 }
 
 // ExportWebSocketClientFromEndpointsToTSFile writes generated TS code from endpoints to a file.
 // ExportWebSocketClientFromEndpointsToTSFile 将 WebSocketEndpoint 生成的 TS 代码写入文件。
 func ExportWebSocketClientFromEndpointsToTSFile(baseURL string, endpoints []WebSocketEndpointLike, relativeTSPath string) error {
-	return exportWebSocketClientFromEndpointsToTSFile(baseURL, endpoints, relativeTSPath)
+	return exportWebSocketClientFromEndpointsToTSFile(baseURL, "", endpoints, relativeTSPath)
 }
 
-func generateWebSocketClientFromEndpoints(baseURL string, endpoints []WebSocketEndpointLike) (string, error) {
+func generateWebSocketClientFromEndpoints(basePath string, groupPath string, endpoints []WebSocketEndpointLike) (string, error) {
 	registry := newTSInterfaceRegistry()
 	metas := make([]wsFuncMeta, 0, len(endpoints))
 
@@ -62,10 +62,10 @@ func generateWebSocketClientFromEndpoints(baseURL string, endpoints []WebSocketE
 		})
 	}
 
-	return renderWebSocketTS(baseURL, registry, metas)
+	return renderWebSocketTS(basePath, groupPath, registry, metas)
 }
 
-func exportWebSocketClientFromEndpointsToTSFile(baseURL string, endpoints []WebSocketEndpointLike, relativeTSPath string) error {
+func exportWebSocketClientFromEndpointsToTSFile(basePath string, groupPath string, endpoints []WebSocketEndpointLike, relativeTSPath string) error {
 	if strings.TrimSpace(relativeTSPath) == "" {
 		return fmt.Errorf("relative ts path is required")
 	}
@@ -73,7 +73,7 @@ func exportWebSocketClientFromEndpointsToTSFile(baseURL string, endpoints []WebS
 		return fmt.Errorf("ts file path must be relative to cwd")
 	}
 
-	code, err := generateWebSocketClientFromEndpoints(baseURL, endpoints)
+	code, err := generateWebSocketClientFromEndpoints(basePath, groupPath, endpoints)
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func wsBaseName(meta WebSocketEndpointMeta, index int) string {
 	return base
 }
 
-func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []wsFuncMeta) (string, error) {
+func renderWebSocketTS(basePath string, groupPath string, registry *tsInterfaceRegistry, metas []wsFuncMeta) (string, error) {
 	var b strings.Builder
 
 	writeTSBanner(&b, "Nuxt Gin WebSocket Client")
@@ -469,7 +469,9 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 	}
 
 	writeTSMarker(&b, "Endpoint Classes")
-	basePath := strings.TrimSpace(baseURL)
+	normalizedBasePath := normalizePathSegment(basePath)
+	normalizedGroupPath := normalizePathSegment(groupPath)
+	fullPathPrefix := resolveAPIPath(normalizedBasePath, normalizedGroupPath)
 	for _, m := range metas {
 		className := toUpperCamel(m.FuncName)
 		messageTypeAlias := className + "MessageType"
@@ -499,8 +501,19 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 		b.WriteString("  static readonly NAME = '")
 		b.WriteString(strings.ReplaceAll(m.FuncName, "'", "\\'"))
 		b.WriteString("' as const;\n")
-		b.WriteString("  static readonly PATH = '")
+		b.WriteString("  static readonly PATHS = {\n")
+		b.WriteString("    base: '")
+		b.WriteString(strings.ReplaceAll(normalizedBasePath, "'", "\\'"))
+		b.WriteString("',\n")
+		b.WriteString("    group: '")
+		b.WriteString(strings.ReplaceAll(normalizedGroupPath, "'", "\\'"))
+		b.WriteString("',\n")
+		b.WriteString("    api: '")
 		b.WriteString(strings.ReplaceAll(m.Path, "'", "\\'"))
+		b.WriteString("',\n")
+		b.WriteString("  } as const;\n")
+		b.WriteString("  static readonly FULL_PATH = '")
+		b.WriteString(strings.ReplaceAll(joinURLPath(fullPathPrefix, m.Path), "'", "\\'"))
 		b.WriteString("' as const;\n")
 		b.WriteString("  static readonly MESSAGE_TYPES = [")
 		for i, t := range m.MessageTypes {
@@ -517,15 +530,13 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 		b.WriteString(".NAME;\n")
 		b.WriteString("  public readonly endpointPath = ")
 		b.WriteString(className)
-		b.WriteString(".PATH;\n\n")
+		b.WriteString(".FULL_PATH;\n\n")
 		b.WriteString("  constructor(options: WebSocketConvertOptions<TSend, ")
 		b.WriteString(m.ServerType)
 		b.WriteString(">) {\n")
-		b.WriteString("    const url = joinURLPath('")
-		b.WriteString(strings.ReplaceAll(basePath, "'", "\\'"))
-		b.WriteString("', '")
-		b.WriteString(strings.ReplaceAll(m.Path, "'", "\\'"))
-		b.WriteString("');\n")
+		b.WriteString("    const url = ")
+		b.WriteString(className)
+		b.WriteString(".FULL_PATH;\n")
 		b.WriteString("    super(url, options);\n")
 		b.WriteString("  }\n\n")
 		for _, mt := range m.MessageTypes {

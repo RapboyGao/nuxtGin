@@ -54,8 +54,7 @@ func (s ServerAPI) ExportTS(relativeTSPath string) error {
 	if strings.TrimSpace(relativeTSPath) == "" {
 		relativeTSPath = "vue/composables/my-schemas.ts"
 	}
-	base := resolveAPIPath(s.BasePath, s.GroupPath)
-	return ExportAxiosFromEndpointsToTSFile(base, s.Endpoints, relativeTSPath)
+	return exportAxiosFromEndpointsToTSFile(s.BasePath, s.GroupPath, s.Endpoints, relativeTSPath)
 }
 
 // Build builds gin.RouterGroup and exports TS in one call.
@@ -74,13 +73,13 @@ func (s ServerAPI) Build(engine *gin.Engine, relativeTSPath string) (*gin.Router
 // GenerateAxiosFromEndpoints generates TypeScript axios client source code from endpoints.
 // GenerateAxiosFromEndpoints 根据 Endpoint 列表生成 TypeScript axios 客户端代码。
 func GenerateAxiosFromEndpoints(basePath string, endpoints []EndpointLike) (string, error) {
-	return generateAxiosFromEndpoints(basePath, endpoints)
+	return generateAxiosFromEndpoints(basePath, "", endpoints)
 }
 
 // ExportAxiosFromEndpointsToTSFile writes generated TS code from endpoints to a file.
 // ExportAxiosFromEndpointsToTSFile 将 Endpoint 生成的 TS 代码写入文件。
 func ExportAxiosFromEndpointsToTSFile(basePath string, endpoints []EndpointLike, relativeTSPath string) error {
-	return exportAxiosFromEndpointsToTSFile(basePath, endpoints, relativeTSPath)
+	return exportAxiosFromEndpointsToTSFile(basePath, "", endpoints, relativeTSPath)
 }
 
 // ApplyEndpoints registers endpoints to gin.Engine and exports TS in one call.
@@ -164,8 +163,7 @@ func (s WebSocketAPI) ExportTS(relativeTSPath string) error {
 	if strings.TrimSpace(relativeTSPath) == "" {
 		relativeTSPath = "vue/composables/auto-generated-ws.ts"
 	}
-	base := resolveAPIPath(s.BasePath, s.GroupPath)
-	return ExportWebSocketClientFromEndpointsToTSFile(base, s.Endpoints, relativeTSPath)
+	return exportWebSocketClientFromEndpointsToTSFile(s.BasePath, s.GroupPath, s.Endpoints, relativeTSPath)
 }
 
 // Build builds gin.RouterGroup and exports TS in one call.

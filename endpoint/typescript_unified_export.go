@@ -35,14 +35,11 @@ func ExportUnifiedAPIsToTSFiles(serverAPI ServerAPI, wsAPI WebSocketAPI, options
 		return fmt.Errorf("all ts paths must be relative")
 	}
 
-	serverBase := resolveAPIPath(serverAPI.BasePath, serverAPI.GroupPath)
-	wsBase := resolveAPIPath(wsAPI.BasePath, wsAPI.GroupPath)
-
-	serverCode, err := GenerateAxiosFromEndpoints(serverBase, serverAPI.Endpoints)
+	serverCode, err := generateAxiosFromEndpoints(serverAPI.BasePath, serverAPI.GroupPath, serverAPI.Endpoints)
 	if err != nil {
 		return err
 	}
-	wsCode, err := GenerateWebSocketClientFromEndpoints(wsBase, wsAPI.Endpoints)
+	wsCode, err := generateWebSocketClientFromEndpoints(wsAPI.BasePath, wsAPI.GroupPath, wsAPI.Endpoints)
 	if err != nil {
 		return err
 	}
