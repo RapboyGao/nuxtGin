@@ -261,38 +261,193 @@ README.zh-CN.md
 
 ## 中文说明
 
-`nuxtGin` 是一个结合 **Gin + Nuxt** 的 Go 工具包，核心目标是：
+🧩 `nuxtGin` 是一个务实的 Go 工具包，结合 **Gin + Nuxt**，并提供 **强类型 API 层** 与 **TypeScript 客户端自动生成**（HTTP + WebSocket）。
 
-- 用 Go 定义强类型 HTTP/WebSocket API
-- 自动生成可直接在前端使用的 TypeScript 客户端代码
-- 降低前后端协议维护成本
+本包主要面向并在以下项目中验证：
 
-推荐使用场景：
+- [nuxt-gin-starter](https://github.com/RapboyGao/nuxt-gin-starter)
 
-- 与 [nuxt-gin-starter](https://github.com/RapboyGao/nuxt-gin-starter) 配合使用
+### 🚀 亮点
 
-主要功能：
+- 🛣️ 生产环境可直接托管 Nuxt 静态文件，开发环境可反向代理 Nuxt 服务。
+- 🧠 在 Go 侧定义强类型 HTTP Endpoint。
+- 🔌 提供 WebSocket Endpoint 抽象，支持按消息类型处理。
+- 🧾 支持通过 `tsdoc`/`tsunion` 生成更可读、更强约束的 TS 类型。
+- 🧱 HTTP 客户端按“每个 API 一个 class”生成，带静态元数据。
+- 🎨 生成的 TS 支持自动格式化（可用时走 Prettier）。
 
-- HTTP API 端点定义与 TS Axios 客户端生成
-- WebSocket 端点定义与 TS 客户端生成
-- 支持 `tsdoc`（字段注释）与 `tsunion`（字面量联合）
-- 生成 `validator + ensure`，并支持 WS 的按消息类型 payload 映射
+### 📦 安装
 
-WebSocket 推荐协议：
+```bash
+go get github.com/RapboyGao/nuxtGin
+```
 
-- 使用统一 Envelope：`{ type, payload }`
-- 在 endpoint 中声明 `MessageTypes`
-- 通过 `RegisterWebSocketTypedHandler(...)` 注册客户端 payload 类型
-- 通过 `RegisterWebSocketServerPayloadType(...)` 注册服务端 payload 类型
+### ⚙️ 配置
 
-路径说明（生成 TS class）：
+在项目根目录创建 `server.config.json`：
 
-- `PATHS.base`：BasePath
-- `PATHS.group`：GroupPath
-- `PATHS.api`：接口自身路径
-- `FULL_PATH`：实际请求/连接路径
+```json
+{
+  "ginPort": 8080,
+  "nuxtPort": 3000,
+  "baseUrl": "/"
+}
+```
 
-如需完整中文文档，也可查看：`README.zh-CN.md`。
+### 🧭 快速开始
+
+```go
+package main
+
+import (
+    "github.com/RapboyGao/nuxtGin"
+    "github.com/RapboyGao/nuxtGin/endpoint"
+)
+
+func main() {
+    endpoints := []endpoint.EndpointLike{}
+    nuxtGin.MustRunServer(endpoints)
+}
+```
+
+### 🧱 HTTP Endpoints + TS 客户端
+
+#### 1) 在 Go 中定义强类型 Endpoint
+
+```go
+type GetUserReq struct {
+    ID     string `json:"id" tsdoc:"Unique user id / 用户唯一标识"`
+    Level  string `json:"level" tsunion:"warning,success,error" tsdoc:"Message level / 消息等级"`
+    Retry  int    `json:"retry" tsunion:"0,1,3" tsdoc:"Retry count / 重试次数"`
+    Strict bool   `json:"strict" tsunion:"true,false" tsdoc:"Strict mode / 严格模式"`
+}
+
+type GetUserResp struct {
+    Name string `json:"name" tsdoc:"Display name / 显示名称"`
+}
+```
+
+#### 2) 一次完成注册与导出
+
+```go
+engine := gin.Default()
+_, err := endpoint.ApplyEndpoints(engine, buildEndpoints())
+if err != nil {
+    panic(err)
+}
+```
+
+默认输出：
+
+- Base path: `/api-go/v1`
+- TS 文件：`vue/composables/auto-generated-api.ts`
+
+#### HTTP 生成风格
+
+每个 API 会生成一个 class（类名包含 Method），并提供：
+
+- `NAME`
+- `SUMMARY`
+- `METHOD`
+- `PATHS`（`base/group/api`）
+- `FULL_PATH`
+- `pathParamsShape()`
+- `buildURL(...)`
+- `requestConfig(...)`
+- `request(...)`
+
+### 🔌 WebSocket Endpoints + TS 客户端
+
+使用 `WebSocketEndpoint` / `WebSocketAPI` 注册 WS 路由并导出 TS。
+
+默认输出：
+
+- Base path: `/ws-go/v1`
+- TS 文件：`vue/composables/auto-generated-ws.ts`
+
+生成内容包括：
+
+- `TypedWebSocketClient<TReceive, TSend, TType>`
+- `onType(...)` 与 `onTyped(...)`
+- 自动生成的 `validator + ensure`
+- `MessageTypes` 对应的字面量联合类型
+- 每个 endpoint 的 `XxxReceiveUnion` / `XxxSendUnion`
+- 每个 endpoint 的 `onTypedMessage(...)` / `sendTypedMessage(...)`
+
+#### 推荐 Envelope 结构
+
+```go
+type ChatEnvelope struct {
+    Type    string          `json:"type"`
+    Payload json.RawMessage `json:"payload"`
+}
+```
+
+推荐搭配：
+
+- 在 endpoint 声明 `MessageTypes`
+- 用 `RegisterWebSocketTypedHandler(...)` 注册客户端 payload 类型
+- 用 `RegisterWebSocketServerPayloadType(...)` 注册服务端 payload 类型
+
+校验规则：
+
+- 只要设置了 `MessageTypes`，每个 message type 必须同时存在 client/server payload 映射
+- 映射不完整会在 build/export 阶段直接报错（fail fast）
+
+### 🏷️ `tsdoc` 与 `tsunion`
+
+#### `tsdoc`
+
+为 struct 字段生成 TSDoc：
+
+```go
+Name string `json:"name" tsdoc:"Display name / 显示名称"`
+```
+
+#### `tsunion`
+
+生成 TS 字面量联合类型，并在 validator 中加入运行时检查。支持：
+
+- `string`
+- `bool`
+- `int/int8/int16/int32`
+- `uint/uint8/uint16/uint32`
+- `float32/float64`
+
+示例：
+
+```go
+Level  string `json:"level" tsunion:"warning,success,error"`
+Retry  int    `json:"retry" tsunion:"0,1,3"`
+Strict bool   `json:"strict" tsunion:"true,false"`
+```
+
+### 🎨 TS 格式化
+
+生成 TS 时按以下顺序尝试：
+
+1. `prettier --parser typescript`
+2. `npx prettier --parser typescript`
+3. 均不可用时保留原始生成内容
+
+该流程不会阻塞生成。
+
+### 🗂️ 项目结构
+
+```text
+runtime/                 # server runtime (config, mode, vue serving, bootstrap)
+runtime_compat.go        # compatibility exports
+endpoint/                # HTTP/WS endpoint layer + TS generators
+utils/                   # utility helpers
+README.md
+README.zh-CN.md
+```
+
+### 🔎 说明
+
+- 项目根目录存在 `node_modules` 时会判定为开发模式。
+- 如需完全自定义 Gin handler，可使用 `CustomEndpoint`。
+- 推荐 Starter 项目：[Nuxt Gin Starter](https://github.com/RapboyGao/nuxt-gin-starter)
 
 ## 📄 License
 
