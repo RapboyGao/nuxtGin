@@ -57,30 +57,8 @@ type CookieParams struct {
 	SessionID string `json:"sessionID" tsdoc:"会话ID / Session identifier"`
 }
 
-func TestGenerateAxiosFromEndpoints(t *testing.T) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd failed: %v", err)
-	}
-
-	moduleRoot := cwd
-	for {
-		if _, statErr := os.Stat(filepath.Join(moduleRoot, "go.mod")); statErr == nil {
-			break
-		}
-		next := filepath.Dir(moduleRoot)
-		if next == moduleRoot {
-			t.Fatalf("go.mod not found from cwd: %s", cwd)
-		}
-		moduleRoot = next
-	}
-
-	t.Cleanup(func() { _ = os.Chdir(cwd) })
-	if err := os.Chdir(moduleRoot); err != nil {
-		t.Fatalf("chdir failed: %v", err)
-	}
-
-	apis := []EndpointLike{
+func buildCommonHTTPTestAPIs() []EndpointLike {
+	return []EndpointLike{
 		Endpoint[PathByID, NoParams, NoParams, NoParams, NoBody, PersonDetailResp]{
 			Name:        "GetPersonByID",
 			Method:      HTTPMethodGet,
@@ -129,6 +107,32 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 			},
 		},
 	}
+}
+
+func TestGenerateAxiosFromEndpoints(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd failed: %v", err)
+	}
+
+	moduleRoot := cwd
+	for {
+		if _, statErr := os.Stat(filepath.Join(moduleRoot, "go.mod")); statErr == nil {
+			break
+		}
+		next := filepath.Dir(moduleRoot)
+		if next == moduleRoot {
+			t.Fatalf("go.mod not found from cwd: %s", cwd)
+		}
+		moduleRoot = next
+	}
+
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	if err := os.Chdir(moduleRoot); err != nil {
+		t.Fatalf("chdir failed: %v", err)
+	}
+
+	apis := buildCommonHTTPTestAPIs()
 
 	outPath := filepath.Join(".generated", "schema", "http", "server_api.ts")
 	httpAPI := ServerAPI{
@@ -431,14 +435,28 @@ type wsServerBroadcastPayload struct {
 	Text         string `json:"text" tsdoc:"广播文本 / Broadcast text"`
 }
 
-func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T) {
-	ws := &WebSocketEndpoint{
+func buildCommonWSTestEndpoint() *WebSocketEndpoint {
+	return &WebSocketEndpoint{
 		Name:              "chat_events",
 		Path:              "/chat/events",
 		ClientMessageType: reflect.TypeOf(wsClientMessage{}),
 		ServerMessageType: reflect.TypeOf(wsServerMessageEnvelope{}),
 		MessageTypes:      []string{"room:join", "chat:text", "system:ack"},
 	}
+}
+
+func buildNotifyWSTestEndpoint() *WebSocketEndpoint {
+	return &WebSocketEndpoint{
+		Name:              "notify_events",
+		Path:              "/notify/events",
+		ClientMessageType: reflect.TypeOf(wsClientMessage{}),
+		ServerMessageType: reflect.TypeOf(wsServerMessageEnvelope{}),
+		MessageTypes:      []string{"notify:new", "notify:read"},
+	}
+}
+
+func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T) {
+	ws := buildCommonWSTestEndpoint()
 
 	code, err := generateWebSocketClientFromEndpoints("/ws", "/v1", []WebSocketEndpointLike{ws})
 	if err != nil {
@@ -590,13 +608,7 @@ func TestGenerateWebSocketClientFromEndpoints_ExportFile(t *testing.T) {
 		t.Fatalf("chdir failed: %v", err)
 	}
 
-	ws := &WebSocketEndpoint{
-		Name:              "chat_events",
-		Path:              "/chat/events",
-		ClientMessageType: reflect.TypeOf(wsClientMessage{}),
-		ServerMessageType: reflect.TypeOf(wsServerMessageEnvelope{}),
-		MessageTypes:      []string{"room:join", "chat:text", "system:ack"},
-	}
+	ws := buildCommonWSTestEndpoint()
 
 	outPath := filepath.Join(".generated", "schema", "sockets", "ws_client.ts")
 	wsAPI := WebSocketAPI{
@@ -615,6 +627,80 @@ func TestGenerateWebSocketClientFromEndpoints_ExportFile(t *testing.T) {
 	code := string(data)
 	if !strings.Contains(code, "export class TypedWebSocketClient<") {
 		t.Fatalf("expected generated websocket class in output file")
+	}
+}
+
+func TestGenerateWebSocketClientFromEndpoints_MultipleEndpoints_PathMetadata(t *testing.T) {
+	ws1 := buildCommonWSTestEndpoint()
+	ws2 := buildNotifyWSTestEndpoint()
+
+	code, err := generateWebSocketClientFromEndpoints("/ws", "/v2", []WebSocketEndpointLike{ws1, ws2})
+	if err != nil {
+		t.Fatalf("generateWebSocketClientFromEndpoints returned error: %v", err)
+	}
+
+	if !strings.Contains(code, "export class ChatEvents<") || !strings.Contains(code, "export class NotifyEvents<") {
+		t.Fatalf("expected multiple websocket endpoint classes generation")
+	}
+	if !strings.Contains(code, "static readonly PATHS = {") {
+		t.Fatalf("expected websocket PATHS metadata generation")
+	}
+	if !strings.Contains(code, `base: "/ws"`) || !strings.Contains(code, `group: "/v2"`) {
+		t.Fatalf("expected websocket PATHS base/group values")
+	}
+	if !strings.Contains(code, `api: "/chat/events"`) || !strings.Contains(code, `api: "/notify/events"`) {
+		t.Fatalf("expected websocket PATHS api values")
+	}
+	if !strings.Contains(code, `static readonly FULL_PATH = "/ws/v2/chat/events"`) ||
+		!strings.Contains(code, `static readonly FULL_PATH = "/ws/v2/notify/events"`) {
+		t.Fatalf("expected websocket FULL_PATH generation")
+	}
+	if !strings.Contains(code, "export function createNotifyEvents<TSend =") {
+		t.Fatalf("expected convenience create function for second websocket endpoint class")
+	}
+}
+
+func TestGenerateWebSocketClientFromEndpoints_ValidationErrors(t *testing.T) {
+	tests := []struct {
+		name      string
+		endpoints []WebSocketEndpointLike
+		wantErr   string
+	}{
+		{
+			name: "missing path",
+			endpoints: []WebSocketEndpointLike{
+				&WebSocketEndpoint{
+					Name:              "bad_ws",
+					Path:              "",
+					ClientMessageType: reflect.TypeOf(wsClientMessage{}),
+					ServerMessageType: reflect.TypeOf(wsServerMessageEnvelope{}),
+				},
+			},
+			wantErr: "path is required",
+		},
+		{
+			name: "missing server message type",
+			endpoints: []WebSocketEndpointLike{
+				&WebSocketEndpoint{
+					Name:              "bad_ws",
+					Path:              "/bad",
+					ClientMessageType: reflect.TypeOf(wsClientMessage{}),
+				},
+			},
+			wantErr: "server message type is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := generateWebSocketClientFromEndpoints("/ws", "/v1", tt.endpoints)
+			if err == nil {
+				t.Fatalf("expected error")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error containing %q, got: %v", tt.wantErr, err)
+			}
+		})
 	}
 }
 
@@ -643,29 +729,12 @@ func TestExportUnifiedAPIsToTSFiles(t *testing.T) {
 	server := ServerAPI{
 		BasePath:  "/api",
 		GroupPath: "/v1",
-		Endpoints: []EndpointLike{
-			Endpoint[PathByURIID, NoParams, NoParams, NoParams, NoBody, PersonDetailResp]{
-				Name:   "GetPersonByURIPath",
-				Method: HTTPMethodGet,
-				Path:   "/PersonByURI/:id",
-				HandlerFunc: func(path PathByURIID, _ NoParams, _ NoParams, _ NoParams, _ NoBody, _ *gin.Context) (Response[PersonDetailResp], error) {
-					return Response[PersonDetailResp]{StatusCode: 200}, nil
-				},
-			},
-		},
+		Endpoints: buildCommonHTTPTestAPIs(),
 	}
 	ws := WebSocketAPI{
 		BasePath:  "/ws",
 		GroupPath: "/v1",
-		Endpoints: []WebSocketEndpointLike{
-			&WebSocketEndpoint{
-				Name:              "chat_events",
-				Path:              "/chat/events",
-				ClientMessageType: reflect.TypeOf(wsClientMessage{}),
-				ServerMessageType: reflect.TypeOf(wsServerMessageEnvelope{}),
-				MessageTypes:      []string{"room:join", "chat:text", "system:ack"},
-			},
-		},
+		Endpoints: []WebSocketEndpointLike{buildCommonWSTestEndpoint()},
 	}
 
 	opts := UnifiedTSExportOptions{
