@@ -156,6 +156,19 @@ Generated WS TS includes:
 - generated validators + `ensureXxx(...)`
 - optional message-type union aliases when endpoint declares `MessageTypes`
 
+### Recommended Envelope Shape
+
+Keep one stable websocket envelope for all message kinds:
+
+```go
+type ChatEnvelope struct {
+    Type    string          `json:"type"`
+    Payload json.RawMessage `json:"payload"`
+}
+```
+
+Then dispatch by `Type` and decode `Payload` per message type via typed handlers.
+
 ### `TypedWebSocketClient` runtime members
 
 Useful runtime members for UI state and diagnostics:
