@@ -90,6 +90,14 @@ func generateWebSocketClientFromEndpoints(basePath string, groupPath string, end
 			ServerPayloadByType: serverPayloadByType,
 		})
 	}
+	sort.Slice(metas, func(i, j int) bool {
+		ci := toUpperCamel(metas[i].FuncName)
+		cj := toUpperCamel(metas[j].FuncName)
+		if ci != cj {
+			return ci < cj
+		}
+		return metas[i].Path < metas[j].Path
+	})
 
 	return renderWebSocketTS(basePath, groupPath, registry, metas)
 }
@@ -453,7 +461,11 @@ func renderWebSocketTS(basePath string, groupPath string, registry *tsInterfaceR
 		b.WriteString("// 兜底：只有 interface 无法表达时才使用 type。\n")
 		b.WriteString("// =====================================================\n\n")
 	}
-	for _, def := range registry.defs {
+	sortedDefs := append([]tsInterfaceDef(nil), registry.defs...)
+	sort.Slice(sortedDefs, func(i, j int) bool {
+		return sortedDefs[i].Name < sortedDefs[j].Name
+	})
+	for _, def := range sortedDefs {
 		b.WriteString("// -----------------------------------------------------\n")
 		b.WriteString("// TYPE: ")
 		b.WriteString(def.Name)

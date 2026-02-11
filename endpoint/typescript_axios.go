@@ -135,6 +135,17 @@ func generateAxiosFromEndpoints(basePath string, groupPath string, endpoints []E
 		}
 		metas = append(metas, fnMeta)
 	}
+	sort.Slice(metas, func(i, j int) bool {
+		ci := toUpperCamel(metas[i].FuncName) + toUpperCamel(strings.ToLower(metas[i].Method))
+		cj := toUpperCamel(metas[j].FuncName) + toUpperCamel(strings.ToLower(metas[j].Method))
+		if ci != cj {
+			return ci < cj
+		}
+		if metas[i].Path != metas[j].Path {
+			return metas[i].Path < metas[j].Path
+		}
+		return metas[i].Method < metas[j].Method
+	})
 
 	return renderAxiosTS(basePath, groupPath, registry, metas)
 }
@@ -256,7 +267,11 @@ func renderAxiosTS(basePath string, groupPath string, registry *tsInterfaceRegis
 		b.WriteString("// 兜底：只有 interface 无法表达时才使用 type。\n")
 		b.WriteString("// =====================================================\n\n")
 	}
-	for _, def := range registry.defs {
+	sortedDefs := append([]tsInterfaceDef(nil), registry.defs...)
+	sort.Slice(sortedDefs, func(i, j int) bool {
+		return sortedDefs[i].Name < sortedDefs[j].Name
+	})
+	for _, def := range sortedDefs {
 		b.WriteString("// -----------------------------------------------------\n")
 		b.WriteString("// TYPE: ")
 		b.WriteString(def.Name)

@@ -159,6 +159,12 @@ func dedupeExportBlocks(blocks []tsExportBlock) []tsExportBlock {
 		seen[b.Name] = struct{}{}
 		out = append(out, b)
 	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].Kind < out[j].Kind
+	})
 	return out
 }
 
