@@ -17,9 +17,9 @@ type APIServerConfig struct {
 	// Server 包含运行时使用的基础 URL 与端口配置。
 	Server ServerRuntimeConfig
 
-	// EnableCORS controls whether cors.Default() is attached in debug mode.
-	// EnableCORS 控制是否在调试模式挂载 cors.Default()。
-	EnableCORS bool
+	// CORS is the actual gin-contrib/cors config.
+	// CORS 为 gin-contrib/cors 的实际配置；为 nil 表示不启用 CORS。
+	CORS *cors.Config
 
 	// API definitions (already include GroupPath/BasePath inside each API struct).
 	// API 定义（各自结构体内已包含 GroupPath/BasePath）。
@@ -35,6 +35,31 @@ type APIServerConfig struct {
 	// ExportUnifiedTS controls whether to export into three files via shared schema mode.
 	// ExportUnifiedTS 控制是否使用共享 schema 的三文件统一导出。
 	ExportUnifiedTS bool
+}
+
+// DefaultAPIServerConfig returns a fully initialized default config.
+// DefaultAPIServerConfig 返回一份可直接使用的默认配置。
+func DefaultAPIServerConfig() APIServerConfig {
+	config := APIServerConfig{
+		Server: *GetConfig,
+		ServerAPI: endpoint.ServerAPI{
+			BasePath:  "/api-go/v1",
+			GroupPath: "/api-go/v1",
+		},
+		WebSocketAPI: endpoint.WebSocketAPI{
+			BasePath:  "/ws-go/v1",
+			GroupPath: "/ws-go/v1",
+		},
+		ServerTSPath:    "vue/composables/auto-generated-api.ts",
+		WebSocketTSPath: "vue/composables/auto-generated-ws.ts",
+		SchemaTSPath:    "vue/composables/auto-generated-types.ts",
+		ExportUnifiedTS: true,
+	}
+	if GetGinMode() == gin.DebugMode {
+		defaultCorsConfig := cors.DefaultConfig()
+		config.CORS = &defaultCorsConfig
+	}
+	return config
 }
 
 func (c APIServerConfig) normalized() APIServerConfig {
@@ -83,8 +108,8 @@ func BuildServerFromConfig(cfg APIServerConfig) (*gin.Engine, error) {
 	}
 
 	engine := newGinEngine()
-	if GetGinMode() == gin.DebugMode && cfg.EnableCORS {
-		engine.Use(cors.Default())
+	if cfg.CORS != nil {
+		engine.Use(cors.New(*cfg.CORS))
 	}
 	ServeVue(engine)
 
