@@ -24,10 +24,11 @@ func (s ServerAPI) BuildGinGroup(engine *gin.Engine) (*gin.RouterGroup, error) {
 	if engine == nil {
 		return nil, errors.New("engine is nil")
 	}
-	if strings.TrimSpace(s.GroupPath) == "" {
-		return nil, errors.New("group path is required")
+	groupPath := resolveAPIPath(s.BasePath, s.GroupPath)
+	if strings.TrimSpace(groupPath) == "" {
+		return nil, errors.New("base path or group path is required")
 	}
-	group := engine.Group(s.GroupPath)
+	group := engine.Group(groupPath)
 	if err := registerEndpointHandlers(group, s.Endpoints); err != nil {
 		return nil, err
 	}
@@ -45,10 +46,7 @@ func (s ServerAPI) ExportTS(relativeTSPath string) error {
 	if strings.TrimSpace(relativeTSPath) == "" {
 		relativeTSPath = "vue/composables/my-schemas.ts"
 	}
-	base := strings.TrimSpace(s.BasePath)
-	if base == "" {
-		base = s.GroupPath
-	}
+	base := resolveAPIPath(s.BasePath, s.GroupPath)
 	return ExportAxiosFromEndpointsToTSFile(base, s.Endpoints, relativeTSPath)
 }
 
@@ -130,11 +128,12 @@ func (s WebSocketAPI) BuildGinGroup(engine *gin.Engine) (*gin.RouterGroup, error
 	if engine == nil {
 		return nil, errors.New("engine is nil")
 	}
-	if strings.TrimSpace(s.GroupPath) == "" {
-		return nil, errors.New("group path is required")
+	groupPath := resolveAPIPath(s.BasePath, s.GroupPath)
+	if strings.TrimSpace(groupPath) == "" {
+		return nil, errors.New("base path or group path is required")
 	}
-	group := engine.Group(s.GroupPath)
-	if err := registerWebSocketHandlers(group, s.GroupPath, s.Endpoints); err != nil {
+	group := engine.Group(groupPath)
+	if err := registerWebSocketHandlers(group, groupPath, s.Endpoints); err != nil {
 		return nil, err
 	}
 	return group, nil
@@ -149,10 +148,7 @@ func (s WebSocketAPI) ExportTS(relativeTSPath string) error {
 	if strings.TrimSpace(relativeTSPath) == "" {
 		relativeTSPath = "vue/composables/auto-generated-ws.ts"
 	}
-	base := strings.TrimSpace(s.BasePath)
-	if base == "" {
-		base = s.GroupPath
-	}
+	base := resolveAPIPath(s.BasePath, s.GroupPath)
 	return ExportWebSocketClientFromEndpointsToTSFile(base, s.Endpoints, relativeTSPath)
 }
 
@@ -244,4 +240,35 @@ func joinWSPath(baseURL string, path string) string {
 		base = "/" + base
 	}
 	return base + "/" + p
+}
+
+func resolveAPIPath(basePath string, groupPath string) string {
+	base := normalizePathSegment(basePath)
+	group := normalizePathSegment(groupPath)
+
+	if base == "" {
+		return group
+	}
+	if group == "" {
+		return base
+	}
+	if group == base || strings.HasPrefix(group, base+"/") {
+		return group
+	}
+	if base == group || strings.HasPrefix(base, group+"/") {
+		return base
+	}
+	return base + "/" + strings.TrimLeft(group, "/")
+}
+
+func normalizePathSegment(path string) string {
+	p := strings.TrimSpace(path)
+	if p == "" {
+		return ""
+	}
+	p = "/" + strings.Trim(p, "/")
+	if p == "/" {
+		return ""
+	}
+	return p
 }
