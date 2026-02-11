@@ -414,12 +414,12 @@ func TestGenerateAxiosFromEndpoints_CustomEndpoint_ExportTSFile(t *testing.T) {
 	}
 }
 
-type wsClientMessage struct {
-	Type    string                  `json:"type" tsdoc:"消息类型 / Message type"`
-	Payload wsClientPayloadEnvelope `json:"payload" tsdoc:"消息载荷 / Message payload"`
+type wsClientEnvelope struct {
+	Type    string          `json:"type" tsdoc:"消息类型 / Message type"`
+	Payload wsClientPayload `json:"payload" tsdoc:"消息载荷 / Message payload"`
 }
 
-type wsClientPayloadEnvelope struct {
+type wsClientPayload struct {
 	JoinRoom *wsClientJoinRoomPayload `json:"joinRoom,omitempty" tsdoc:"加入房间消息 / Join room payload"`
 	ChatText *wsClientChatTextPayload `json:"chatText,omitempty" tsdoc:"聊天文本消息 / Chat text payload"`
 }
@@ -434,12 +434,12 @@ type wsClientChatTextPayload struct {
 	Text   string `json:"text" tsdoc:"文本内容 / Message text"`
 }
 
-type wsServerMessageEnvelope struct {
-	Type    string                  `json:"type" tsdoc:"服务端消息类型 / Server message type"`
-	Payload wsServerPayloadEnvelope `json:"payload" tsdoc:"服务端消息载荷 / Server message payload"`
+type wsServerEnvelope struct {
+	Type    string          `json:"type" tsdoc:"服务端消息类型 / Server message type"`
+	Payload wsServerPayload `json:"payload" tsdoc:"服务端消息载荷 / Server message payload"`
 }
 
-type wsServerPayloadEnvelope struct {
+type wsServerPayload struct {
 	Ack       *wsServerAckPayload       `json:"ack,omitempty" tsdoc:"确认消息 / Acknowledgement payload"`
 	Broadcast *wsServerBroadcastPayload `json:"broadcast,omitempty" tsdoc:"广播消息 / Broadcast payload"`
 }
@@ -461,8 +461,8 @@ func buildCommonWSTestEndpoint() *WebSocketEndpoint {
 	return &WebSocketEndpoint{
 		Name:              "chat_events",
 		Path:              "/chat/events",
-		ClientMessageType: reflect.TypeOf(wsClientMessage{}),
-		ServerMessageType: reflect.TypeOf(wsServerMessageEnvelope{}),
+		ClientMessageType: reflect.TypeOf(wsClientEnvelope{}),
+		ServerMessageType: reflect.TypeOf(wsServerEnvelope{}),
 		MessageTypes:      []string{"room:join", "chat:text", "system:ack"},
 	}
 }
@@ -471,8 +471,8 @@ func buildNotifyWSTestEndpoint() *WebSocketEndpoint {
 	return &WebSocketEndpoint{
 		Name:              "notify_events",
 		Path:              "/notify/events",
-		ClientMessageType: reflect.TypeOf(wsClientMessage{}),
-		ServerMessageType: reflect.TypeOf(wsServerMessageEnvelope{}),
+		ClientMessageType: reflect.TypeOf(wsClientEnvelope{}),
+		ServerMessageType: reflect.TypeOf(wsServerEnvelope{}),
 		MessageTypes:      []string{"notify:new", "notify:read"},
 	}
 }
@@ -522,7 +522,7 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "this.messagesSent += 1;") || !strings.Contains(code, "this.messagesReceived += 1;") {
 		t.Fatalf("expected websocket client counters update logic")
 	}
-	if !strings.Contains(code, "export function validateWsClientMessage(") || !strings.Contains(code, "value is WsClientMessage") {
+	if !strings.Contains(code, "export function validateWsClientEnvelope(") || !strings.Contains(code, "value is WsClientEnvelope") {
 		t.Fatalf("expected websocket interface validator generation")
 	}
 	if !strings.Contains(code, "/** 消息类型 / Message type */") {
@@ -546,10 +546,10 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "typeof obj[\"priority\"] ===") || !strings.Contains(code, "obj[\"priority\"] === 3") {
 		t.Fatalf("expected websocket numeric tsunion validator generation")
 	}
-	if !strings.Contains(code, "export function ensureWsClientMessage(") || !strings.Contains(code, "): WsClientMessage") {
+	if !strings.Contains(code, "export function ensureWsClientEnvelope(") || !strings.Contains(code, "): WsClientEnvelope") {
 		t.Fatalf("expected websocket interface ensure function generation")
 	}
-	if !strings.Contains(code, "if (!validateWsClientMessage(value)) {") {
+	if !strings.Contains(code, "if (!validateWsClientEnvelope(value)) {") {
 		t.Fatalf("expected websocket interface ensure function to validate first")
 	}
 	if !strings.Contains(code, "onType(") || !strings.Contains(code, "type: TType") || !strings.Contains(code, "TypeHandlerOptions<TReceive>") {
@@ -570,16 +570,16 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "options?: TypeHandlerOptions<TReceive>") || !strings.Contains(code, "options?: TypedHandlerOptions<TReceive, TPayload>") {
 		t.Fatalf("expected base on handlers to keep optional options signature")
 	}
-	if !strings.Contains(code, "options?: TypeHandlerOptions<WsServerMessageEnvelope>") {
+	if !strings.Contains(code, "options?: TypeHandlerOptions<WsServerEnvelope>") {
 		t.Fatalf("expected endpoint type handlers to keep optional options signature")
 	}
-	if !strings.Contains(code, "if (options === undefined)") || !strings.Contains(code, "options = { validate: validateWsServerMessageEnvelope };") {
+	if !strings.Contains(code, "if (options === undefined)") || !strings.Contains(code, "options = { validate: validateWsServerEnvelope };") {
 		t.Fatalf("expected endpoint type handlers to provide default message validator")
 	}
-	if !strings.Contains(code, "options?: TypedHandlerOptions<WsServerMessageEnvelope, TPayload>") {
+	if !strings.Contains(code, "options?: TypedHandlerOptions<WsServerEnvelope, TPayload>") {
 		t.Fatalf("expected endpoint payload handlers to keep optional options signature")
 	}
-	if !strings.Contains(code, "function defaultValidatePayload(") || !strings.Contains(code, "return validateWsServerMessageEnvelope(message);") || !strings.Contains(code, "options = { validate: defaultValidatePayload };") {
+	if !strings.Contains(code, "function defaultValidatePayload(") || !strings.Contains(code, "return validateWsServerEnvelope(message);") || !strings.Contains(code, "options = { validate: defaultValidatePayload };") {
 		t.Fatalf("expected endpoint payload handlers to provide default message validator")
 	}
 	if !strings.Contains(code, "// ignore single listener errors and continue dispatch") {
@@ -606,7 +606,7 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "static readonly MESSAGE_TYPES = [") {
 		t.Fatalf("expected endpoint-specific message type metadata")
 	}
-	if !strings.Contains(code, "options: WebSocketConvertOptions<TSend, WsServerMessageEnvelope>") {
+	if !strings.Contains(code, "options: WebSocketConvertOptions<TSend, WsServerEnvelope>") {
 		t.Fatalf("expected required options in endpoint class constructor")
 	}
 	if !strings.Contains(code, "options: WebSocketConvertOptions<TSend, TReceive>") {
@@ -715,8 +715,8 @@ func TestGenerateWebSocketClientFromEndpoints_ValidationErrors(t *testing.T) {
 				&WebSocketEndpoint{
 					Name:              "bad_ws",
 					Path:              "",
-					ClientMessageType: reflect.TypeOf(wsClientMessage{}),
-					ServerMessageType: reflect.TypeOf(wsServerMessageEnvelope{}),
+					ClientMessageType: reflect.TypeOf(wsClientEnvelope{}),
+					ServerMessageType: reflect.TypeOf(wsServerEnvelope{}),
 				},
 			},
 			wantErr: "path is required",
@@ -727,7 +727,7 @@ func TestGenerateWebSocketClientFromEndpoints_ValidationErrors(t *testing.T) {
 				&WebSocketEndpoint{
 					Name:              "bad_ws",
 					Path:              "/bad",
-					ClientMessageType: reflect.TypeOf(wsClientMessage{}),
+					ClientMessageType: reflect.TypeOf(wsClientEnvelope{}),
 				},
 			},
 			wantErr: "server message type is required",
@@ -826,7 +826,7 @@ func TestExportUnifiedAPIsToTSFiles(t *testing.T) {
 	if !strings.Contains(sharedCode, "export interface PathByURIID") {
 		t.Fatalf("expected shared schema to include server interfaces")
 	}
-	if !strings.Contains(sharedCode, "export interface WsServerMessageEnvelope") {
+	if !strings.Contains(sharedCode, "export interface WsServerEnvelope") {
 		t.Fatalf("expected shared schema to include websocket interfaces")
 	}
 	if strings.Count(sharedCode, "export interface PathByURIID") != 1 {
