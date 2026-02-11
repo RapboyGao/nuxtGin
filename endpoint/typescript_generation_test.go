@@ -109,6 +109,15 @@ func buildCommonHTTPTestAPIs() []EndpointLike {
 	}
 }
 
+// TestGenerateAxiosFromEndpoints
+// 这个测试验证 HTTP TS 生成主流程是否完整可用，重点覆盖：
+// 1) 可从一组 Go Endpoint 生成 class 风格的 TS API（每个 API 一个 class + request 便捷函数）。
+// 2) 生成的 class 元数据是否正确（METHOD/NAME/SUMMARY/PATHS/FULL_PATH）。
+// 3) base/group/api 路径拆分是否保留配置输入，并能拼出正确 FULL_PATH。
+// 4) path/query/header/cookie 参数映射与路径参数大小写映射是否正确。
+// 5) requestConfig/request/buildURL 等静态方法是否按预期生成并被 request 复用。
+// 6) 结构体字段注释(tsdoc)、联合字面量(tsunion)、omitempty 可选字段是否正确落到 TS。
+// 7) validator + ensure 函数是否为生成的 interface 正确输出。
 func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -263,6 +272,10 @@ func TestGenerateAxiosFromEndpoints(t *testing.T) {
 	}
 }
 
+// TestGenerateAxiosFromEndpoints_Int64AsStringMode
+// 这个测试只验证一个开关行为：
+// 当 TSInt64MappingMode 设置为 TSInt64ModeString 时，Go 的 int64 字段是否生成为 TS string。
+// 目的是保证“大整数按字符串传输”的模式不会回退。
 func TestGenerateAxiosFromEndpoints_Int64AsStringMode(t *testing.T) {
 	oldMode := TSInt64MappingMode
 	SetTSInt64MappingMode(TSInt64ModeString)
@@ -290,6 +303,10 @@ func TestGenerateAxiosFromEndpoints_Int64AsStringMode(t *testing.T) {
 	}
 }
 
+// TestGenerateAxiosFromEndpoints_ValidationError
+// 这个测试验证生成前的元数据校验逻辑：
+// 当路由 path 中声明了路径参数（如 :id），但 Endpoint 的 PathParams 使用了 NoParams 时，
+// 生成器必须返回明确错误，而不是继续生成无效 TS。
 func TestGenerateAxiosFromEndpoints_ValidationError(t *testing.T) {
 	apis := []EndpointLike{
 		Endpoint[NoParams, NoParams, NoParams, NoParams, NoBody, PersonDetailResp]{
@@ -311,6 +328,11 @@ func TestGenerateAxiosFromEndpoints_ValidationError(t *testing.T) {
 	}
 }
 
+// TestGenerateAxiosFromEndpoints_CustomEndpoint_ExportTSFile
+// 这个测试验证 CustomEndpoint 路径：
+// 1) CustomEndpoint 能与普通 Endpoint 一样参与 TS 生成并写入文件。
+// 2) RequestKind/ResponseKind 的自定义行为能体现在 TS（如 form-urlencoded 与 text 响应）。
+// 3) 自定义路径参数（含 uri/json tag）插值时字段名映射正确。
 func TestGenerateAxiosFromEndpoints_CustomEndpoint_ExportTSFile(t *testing.T) {
 	type CustomPathParams struct {
 		OrderID string `uri:"orderID" json:"orderID" tsdoc:"订单ID / Order identifier"`
@@ -455,6 +477,13 @@ func buildNotifyWSTestEndpoint() *WebSocketEndpoint {
 	}
 }
 
+// TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers
+// 这个测试验证 WebSocket TS 生成的核心能力，覆盖面最大：
+// 1) 基础 TypedWebSocketClient 是否生成（状态字段、计数器、生命周期订阅等）。
+// 2) URL 解析策略是否同时覆盖开发环境/生产环境分支。
+// 3) validator + ensure 是否为 WS 相关 interface 正确生成。
+// 4) onType/onTyped 及其 options 默认校验逻辑是否按设计输出。
+// 5) 每个 WS Endpoint 专属 class（如 ChatEvents）及 message type union、onXxx helper 是否完整。
 func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T) {
 	ws := buildCommonWSTestEndpoint()
 
@@ -585,6 +614,10 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	}
 }
 
+// TestGenerateWebSocketClientFromEndpoints_ExportFile
+// 这个测试验证“文件导出”链路：
+// 不仅要能生成字符串，还要能通过 WebSocketAPI.ExportTS 成功落盘，
+// 并且输出文件中存在核心类定义，保证导出流程可直接给前端使用。
 func TestGenerateWebSocketClientFromEndpoints_ExportFile(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -630,6 +663,11 @@ func TestGenerateWebSocketClientFromEndpoints_ExportFile(t *testing.T) {
 	}
 }
 
+// TestGenerateWebSocketClientFromEndpoints_MultipleEndpoints_PathMetadata
+// 这个测试验证多 WS Endpoint 同时生成时的稳定性与路径元数据：
+// 1) 多个 endpoint class 是否都会生成（避免后者覆盖前者）。
+// 2) PATHS.base/group/api 与 FULL_PATH 是否分别正确。
+// 3) 每个 endpoint 的 createXxx 便捷构造函数是否都存在。
 func TestGenerateWebSocketClientFromEndpoints_MultipleEndpoints_PathMetadata(t *testing.T) {
 	ws1 := buildCommonWSTestEndpoint()
 	ws2 := buildNotifyWSTestEndpoint()
@@ -660,6 +698,11 @@ func TestGenerateWebSocketClientFromEndpoints_MultipleEndpoints_PathMetadata(t *
 	}
 }
 
+// TestGenerateWebSocketClientFromEndpoints_ValidationErrors
+// 这个测试验证 WS 端点元数据的错误兜底（表驱动）：
+// 1) path 为空时必须报错。
+// 2) server message type 缺失时必须报错。
+// 目标是确保不合法输入在生成阶段就被拦截，并返回可读错误信息。
 func TestGenerateWebSocketClientFromEndpoints_ValidationErrors(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -704,6 +747,12 @@ func TestGenerateWebSocketClientFromEndpoints_ValidationErrors(t *testing.T) {
 	}
 }
 
+// TestExportUnifiedAPIsToTSFiles
+// 这个测试验证“统一导出三文件”能力：
+// 1) ServerAPI 与 WebSocketAPI 是否分别输出到各自文件。
+// 2) 两侧共享的 interface/validator/ensure 是否去重后写入 shared schema 文件。
+// 3) server/ws 文件是否正确 import shared 文件，且移除各自内联 schema 区块。
+// 4) 共享文件中关键类型是否同时包含 HTTP 与 WS 所需定义。
 func TestExportUnifiedAPIsToTSFiles(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
