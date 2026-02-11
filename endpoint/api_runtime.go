@@ -13,8 +13,16 @@ import (
 // ServerAPI 是你用于描述服务器端 API 的唯一结构体；
 // 可构建 gin.RouterGroup，并生成 axios TypeScript。
 type ServerAPI struct {
-	BasePath  string
+	// BasePath is the URL prefix used for generated TS clients.
+	// BasePath 用于生成 TS 客户端时的 URL 前缀。
+	BasePath string
+
+	// GroupPath is the router-group path used when registering handlers in gin.
+	// GroupPath 是在 gin 中注册路由时使用的分组路径。
 	GroupPath string
+
+	// Endpoints contains all HTTP endpoints under this API group.
+	// Endpoints 包含该 API 分组下的全部 HTTP 端点。
 	Endpoints []EndpointLike
 }
 
@@ -117,8 +125,16 @@ func ApplyEndpointsDevOnly(engine *gin.Engine, endpoints []EndpointLike) (*gin.R
 // WebSocketAPI describes websocket endpoints, supports gin registration and TS export.
 // WebSocketAPI 描述 websocket 端点，可构建 gin.RouterGroup，并生成 TS。
 type WebSocketAPI struct {
-	BasePath  string
+	// BasePath is the URL prefix used for generated TS websocket clients.
+	// BasePath 用于生成 TS websocket 客户端时的 URL 前缀。
+	BasePath string
+
+	// GroupPath is the router-group path used when registering websocket handlers in gin.
+	// GroupPath 是在 gin 中注册 websocket 路由时使用的分组路径。
 	GroupPath string
+
+	// Endpoints contains all websocket endpoints under this API group.
+	// Endpoints 包含该 API 分组下的全部 websocket 端点。
 	Endpoints []WebSocketEndpointLike
 }
 

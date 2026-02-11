@@ -1,6 +1,16 @@
 # nuxtGin
 
+[![Go Version](https://img.shields.io/github/go-mod/go-version/RapboyGao/nuxtGin)](https://github.com/RapboyGao/nuxtGin/blob/main/go.mod)
+[![Go Report Card](https://goreportcard.com/badge/github.com/RapboyGao/nuxtGin)](https://goreportcard.com/report/github.com/RapboyGao/nuxtGin)
+[![Latest Release](https://img.shields.io/github/v/release/RapboyGao/nuxtGin)](https://github.com/RapboyGao/nuxtGin/releases)
+[![License](https://img.shields.io/github/license/RapboyGao/nuxtGin)](https://github.com/RapboyGao/nuxtGin/blob/main/LICENSE)
+[![Nuxt Gin Starter](https://img.shields.io/badge/starter-nuxt--gin--starter-2ea44f)](https://github.com/RapboyGao/nuxt-gin-starter)
+
 🧩 A pragmatic Go toolkit that combines **Gin + Nuxt** and provides a **typed API layer** with **TypeScript client generation** for both HTTP and WebSocket.
+
+This package is primarily designed for and validated in:
+
+- [nuxt-gin-starter](https://github.com/RapboyGao/nuxt-gin-starter)
 
 ## 🚀 Highlights
 
@@ -207,10 +217,8 @@ This never blocks generation.
 ## 🗂️ Project Layout
 
 ```text
-serve_vue.go             # Nuxt serving (static/proxy)
-config.go                # server.config.json loader
-gin_mode.go              # dev/prod mode detection
-server.go                # server bootstrap
+runtime/                 # server runtime (config, mode, vue serving, bootstrap)
+runtime_compat.go        # compatibility exports
 endpoint/                # HTTP/WS endpoint layer + TS generators
 utils/                   # utility helpers
 README.md
@@ -221,7 +229,7 @@ README.zh-CN.md
 
 - Dev mode is inferred when `node_modules` exists in the project root.
 - If you need fully custom Gin handler behavior, use `CustomEndpoint`.
-- Starter project: [Nuxt Gin Starter](https://github.com/RapboyGao/nuxt-gin-starter)
+- Recommended starter project: [Nuxt Gin Starter](https://github.com/RapboyGao/nuxt-gin-starter)
 
 ## 📄 License
 
