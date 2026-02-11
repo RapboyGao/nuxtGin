@@ -166,7 +166,10 @@ func exportAxiosFromEndpointsToTSFile(baseURL string, endpoints []EndpointLike, 
 func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosFuncMeta) (string, error) {
 	var b strings.Builder
 	writeTSBanner(&b, "Nuxt Gin HTTP API Client (Axios)")
+	writeTSMarker(&b, "Imports")
 	b.WriteString("import axios, { type AxiosRequestConfig } from 'axios';\n\n")
+	writeTSMarkerEnd(&b, "Imports")
+	writeTSMarker(&b, "Runtime Helpers")
 	b.WriteString("const axiosClient = axios.create();\n\n")
 	b.WriteString("const isPlainObject = (value: unknown): value is Record<string, unknown> =>\n")
 	b.WriteString("  Object.prototype.toString.call(value) === '[object Object]';\n\n")
@@ -241,6 +244,8 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 	b.WriteString("  }\n")
 	b.WriteString("  return out;\n")
 	b.WriteString("};\n\n")
+	writeTSMarkerEnd(&b, "Runtime Helpers")
+	writeTSMarker(&b, "Endpoint Classes")
 
 	needsCookieHelper := false
 	for _, m := range metas {
@@ -500,8 +505,10 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 		b.WriteString("  }\n")
 		b.WriteString("}\n\n")
 	}
+	writeTSMarkerEnd(&b, "Endpoint Classes")
 
 	if len(registry.defs) > 0 {
+		writeTSMarker(&b, "Interfaces & Validators")
 		b.WriteString("// =====================================================\n")
 		b.WriteString("// INTERFACES & VALIDATORS\n")
 		b.WriteString("// Default: object schemas use interface.\n")
@@ -527,6 +534,9 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 			b.WriteString(def.Validator)
 			b.WriteString("\n")
 		}
+	}
+	if len(registry.defs) > 0 {
+		writeTSMarkerEnd(&b, "Interfaces & Validators")
 	}
 
 	return finalizeTypeScriptCode(b.String()), nil

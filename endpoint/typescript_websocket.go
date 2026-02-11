@@ -122,6 +122,7 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 	var b strings.Builder
 
 	writeTSBanner(&b, "Nuxt Gin WebSocket Client")
+	writeTSMarker(&b, "Runtime Helpers")
 	b.WriteString("const isPlainObject = (value: unknown): value is Record<string, unknown> =>\n")
 	b.WriteString("  Object.prototype.toString.call(value) === '[object Object]';\n\n")
 	b.WriteString("const isoDateLike = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+\\-]\\d{2}:\\d{2})$/;\n\n")
@@ -214,7 +215,9 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 	b.WriteString("  const trimmedPath = p.replace(/^\\/+/, '');\n")
 	b.WriteString("  return trimmedBase.startsWith('/') ? `${trimmedBase}/${trimmedPath}` : `/${trimmedBase}/${trimmedPath}`;\n")
 	b.WriteString("};\n\n")
+	writeTSMarkerEnd(&b, "Runtime Helpers")
 
+	writeTSMarker(&b, "Typed WebSocket Client")
 	b.WriteString("/**\n")
 	b.WriteString(" * Generic typed WebSocket client with message and type-based subscriptions.\n")
 	b.WriteString(" * 通用的类型化 WebSocket 客户端，支持全量消息订阅与按 type 订阅。\n")
@@ -409,7 +412,9 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 	b.WriteString("    return (message as Record<string, unknown>)['payload'];\n")
 	b.WriteString("  }\n")
 	b.WriteString("}\n\n")
+	writeTSMarkerEnd(&b, "Typed WebSocket Client")
 
+	writeTSMarker(&b, "Endpoint Classes")
 	basePath := strings.TrimSpace(baseURL)
 	for _, m := range metas {
 		className := toUpperCamel(m.FuncName)
@@ -543,8 +548,10 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 		b.WriteString("<TSend>(options);\n")
 		b.WriteString("}\n\n")
 	}
+	writeTSMarkerEnd(&b, "Endpoint Classes")
 
 	if len(registry.defs) > 0 {
+		writeTSMarker(&b, "Interfaces & Validators")
 		b.WriteString("// =====================================================\n")
 		b.WriteString("// INTERFACES & VALIDATORS\n")
 		b.WriteString("// Default: object schemas use interface.\n")
@@ -592,6 +599,9 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 			b.WriteString("  return value;\n")
 			b.WriteString("}\n\n")
 		}
+	}
+	if len(registry.defs) > 0 {
+		writeTSMarkerEnd(&b, "Interfaces & Validators")
 	}
 
 	return finalizeTypeScriptCode(b.String()), nil

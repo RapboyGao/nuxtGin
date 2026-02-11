@@ -291,3 +291,76 @@ func TestGenerateAxiosFromEndpoints_ValidationError(t *testing.T) {
 		t.Fatalf("expected validation error message, got: %v", err)
 	}
 }
+
+func TestGenerateAxiosFromEndpoints_CustomEndpoint_ExportTSFile(t *testing.T) {
+	type CustomPathParams struct {
+		OrderID string `uri:"orderID" json:"orderID" tsdoc:"订单ID / Order identifier"`
+	}
+	type CustomReq struct {
+		Format string `json:"format" tsunion:"json,text" tsdoc:"返回格式 / Response format"`
+	}
+	type CustomResp struct {
+		Result string `json:"result" tsdoc:"结果文本 / Result text"`
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd failed: %v", err)
+	}
+
+	moduleRoot := cwd
+	for {
+		if _, statErr := os.Stat(filepath.Join(moduleRoot, "go.mod")); statErr == nil {
+			break
+		}
+		next := filepath.Dir(moduleRoot)
+		if next == moduleRoot {
+			t.Fatalf("go.mod not found from cwd: %s", cwd)
+		}
+		moduleRoot = next
+	}
+
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	if err := os.Chdir(moduleRoot); err != nil {
+		t.Fatalf("chdir failed: %v", err)
+	}
+
+	custom := CustomEndpoint[CustomPathParams, NoParams, NoParams, NoParams, CustomReq, CustomResp]{
+		Name:         "submit_order_custom",
+		Method:       HTTPMethodPost,
+		Path:         "/custom/order/:orderID",
+		Description:  "Submit order with custom endpoint.",
+		RequestKind:  TSKindFormURLEncoded,
+		ResponseKind: TSKindText,
+		Responses: []Response[CustomResp]{
+			{StatusCode: 200, Description: "ok"},
+		},
+		HandlerFunc: func(ctx *gin.Context) {
+			ctx.String(200, "ok")
+		},
+	}
+
+	outPath := filepath.Join(".generated", "schema", "custom_endpoint_api.ts")
+	if err := ExportAxiosFromEndpointsToTSFile("/api/v2", []EndpointLike{custom}, outPath); err != nil {
+		t.Fatalf("ExportAxiosFromEndpointsToTSFile returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(moduleRoot, outPath))
+	if err != nil {
+		t.Fatalf("read generated ts file failed: %v", err)
+	}
+	code := string(data)
+
+	if !strings.Contains(code, "export class SubmitOrderCustomPost {") {
+		t.Fatalf("expected class generation for custom endpoint")
+	}
+	if !strings.Contains(code, "toFormUrlEncoded") {
+		t.Fatalf("expected form-urlencoded helper usage for custom endpoint")
+	}
+	if !strings.Contains(code, `responseType: "text"`) {
+		t.Fatalf("expected text response type for custom endpoint")
+	}
+	if !strings.Contains(code, "params.path?.orderID") {
+		t.Fatalf("expected path param interpolation to use orderID casing")
+	}
+}

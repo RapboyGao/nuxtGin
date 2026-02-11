@@ -19,3 +19,16 @@ func writeTSBanner(b *strings.Builder, title string) {
 	b.WriteString(" * =====================================================\n")
 	b.WriteString(" */\n\n")
 }
+
+func writeTSMarker(b *strings.Builder, title string) {
+	b.WriteString("// #region ")
+	b.WriteString(title)
+	b.WriteString("\n")
+	b.WriteString("// =====================================================\n\n")
+}
+
+func writeTSMarkerEnd(b *strings.Builder, title string) {
+	b.WriteString("// #endregion ")
+	b.WriteString(title)
+	b.WriteString("\n\n")
+}
