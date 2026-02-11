@@ -11,12 +11,14 @@ import (
 )
 
 type wsFuncMeta struct {
-	FuncName     string
-	Path         string
-	Description  string
-	ClientType   string
-	ServerType   string
-	MessageTypes []string
+	FuncName            string
+	Path                string
+	Description         string
+	ClientType          string
+	ServerType          string
+	MessageTypes        []string
+	ClientPayloadByType map[string]string
+	ServerPayloadByType map[string]string
 }
 
 // GenerateWebSocketClientFromEndpoints generates TypeScript websocket client source code from endpoints.
@@ -51,14 +53,38 @@ func generateWebSocketClientFromEndpoints(basePath string, groupPath string, end
 		if err != nil {
 			return "", fmt.Errorf("build server message type for websocket endpoint[%d]: %w", i, err)
 		}
+		clientPayloadByType := map[string]string{}
+		for msgType, payloadType := range meta.ClientPayloadTypes {
+			if payloadType == nil || payloadType.Kind() == reflect.Invalid || isNoType(payloadType) {
+				continue
+			}
+			payloadTSType, _, typeErr := tsTypeFromType(payloadType, registry)
+			if typeErr != nil {
+				return "", fmt.Errorf("build client payload type for websocket endpoint[%d] message type %q: %w", i, msgType, typeErr)
+			}
+			clientPayloadByType[msgType] = payloadTSType
+		}
+		serverPayloadByType := map[string]string{}
+		for msgType, payloadType := range meta.ServerPayloadTypes {
+			if payloadType == nil || payloadType.Kind() == reflect.Invalid || isNoType(payloadType) {
+				continue
+			}
+			payloadTSType, _, typeErr := tsTypeFromType(payloadType, registry)
+			if typeErr != nil {
+				return "", fmt.Errorf("build server payload type for websocket endpoint[%d] message type %q: %w", i, msgType, typeErr)
+			}
+			serverPayloadByType[msgType] = payloadTSType
+		}
 
 		metas = append(metas, wsFuncMeta{
-			FuncName:     toLowerCamel(base),
-			Path:         meta.Path,
-			Description:  strings.TrimSpace(meta.Description),
-			ClientType:   clientType,
-			ServerType:   serverType,
-			MessageTypes: normalizeMessageTypes(meta.MessageTypes),
+			FuncName:            toLowerCamel(base),
+			Path:                meta.Path,
+			Description:         strings.TrimSpace(meta.Description),
+			ClientType:          clientType,
+			ServerType:          serverType,
+			MessageTypes:        normalizeMessageTypes(meta.MessageTypes),
+			ClientPayloadByType: clientPayloadByType,
+			ServerPayloadByType: serverPayloadByType,
 		})
 	}
 
@@ -475,6 +501,8 @@ func renderWebSocketTS(basePath string, groupPath string, registry *tsInterfaceR
 	for _, m := range metas {
 		className := toUpperCamel(m.FuncName)
 		messageTypeAlias := className + "MessageType"
+		serverPayloadMapAlias := className + "ServerPayloadByType"
+		clientPayloadMapAlias := className + "ClientPayloadByType"
 		if m.Description != "" {
 			b.WriteString("/**\n")
 			b.WriteString(" * ")
@@ -489,6 +517,32 @@ func renderWebSocketTS(basePath string, groupPath string, registry *tsInterfaceR
 		b.WriteString("MessageType = ")
 		b.WriteString(renderMessageTypeUnion(m.MessageTypes))
 		b.WriteString(";\n")
+		if len(m.ServerPayloadByType) > 0 {
+			b.WriteString("export interface ")
+			b.WriteString(serverPayloadMapAlias)
+			b.WriteString(" {\n")
+			for _, mt := range sortMessageTypesByDeclaredOrder(m.MessageTypes, m.ServerPayloadByType) {
+				b.WriteString("  ")
+				b.WriteString(strconv.Quote(mt))
+				b.WriteString(": ")
+				b.WriteString(m.ServerPayloadByType[mt])
+				b.WriteString(";\n")
+			}
+			b.WriteString("}\n")
+		}
+		if len(m.ClientPayloadByType) > 0 {
+			b.WriteString("export interface ")
+			b.WriteString(clientPayloadMapAlias)
+			b.WriteString(" {\n")
+			for _, mt := range sortMessageTypesByDeclaredOrder(m.MessageTypes, m.ClientPayloadByType) {
+				b.WriteString("  ")
+				b.WriteString(strconv.Quote(mt))
+				b.WriteString(": ")
+				b.WriteString(m.ClientPayloadByType[mt])
+				b.WriteString(";\n")
+			}
+			b.WriteString("}\n")
+		}
 		b.WriteString("export class ")
 		b.WriteString(className)
 		b.WriteString("<TSend = ")
@@ -541,6 +595,14 @@ func renderWebSocketTS(basePath string, groupPath string, registry *tsInterfaceR
 		b.WriteString("  }\n\n")
 		for _, mt := range m.MessageTypes {
 			methodSuffix := wsMessageTypeMethodSuffix(mt)
+			serverPayloadType := "unknown"
+			if v, ok := m.ServerPayloadByType[mt]; ok && strings.TrimSpace(v) != "" {
+				serverPayloadType = v
+			}
+			clientPayloadType := "unknown"
+			if v, ok := m.ClientPayloadByType[mt]; ok && strings.TrimSpace(v) != "" {
+				clientPayloadType = v
+			}
 			b.WriteString("  /**\n")
 			b.WriteString("   * Subscribe to messages with type ")
 			b.WriteString(strconv.Quote(mt))
@@ -588,13 +650,17 @@ func renderWebSocketTS(basePath string, groupPath string, registry *tsInterfaceR
 			b.WriteString("   */\n")
 			b.WriteString("  on")
 			b.WriteString(methodSuffix)
-			b.WriteString("Payload<TPayload>(\n")
-			b.WriteString("    handler: (payload: TPayload, message: ")
+			b.WriteString("Payload(\n")
+			b.WriteString("    handler: (payload: ")
+			b.WriteString(serverPayloadType)
+			b.WriteString(", message: ")
 			b.WriteString(m.ServerType)
 			b.WriteString(") => void,\n")
 			b.WriteString("    options?: TypedHandlerOptions<")
 			b.WriteString(m.ServerType)
-			b.WriteString(", TPayload>\n")
+			b.WriteString(", ")
+			b.WriteString(serverPayloadType)
+			b.WriteString(">\n")
 			b.WriteString("\n")
 			b.WriteString("  ): () => void {\n")
 			b.WriteString("    if (options === undefined) {\n")
@@ -607,11 +673,30 @@ func renderWebSocketTS(basePath string, groupPath string, registry *tsInterfaceR
 			b.WriteString("      }\n")
 			b.WriteString("      options = { validate: defaultValidatePayload };\n")
 			b.WriteString("    }\n")
-			b.WriteString("    return this.onTyped<TPayload>(")
+			b.WriteString("    return this.onTyped<")
+			b.WriteString(serverPayloadType)
+			b.WriteString(">(")
 			b.WriteString(strconv.Quote(mt))
 			b.WriteString(" as ")
 			b.WriteString(messageTypeAlias)
 			b.WriteString(", handler, options);\n")
+			b.WriteString("  }\n\n")
+			b.WriteString("  /**\n")
+			b.WriteString("   * Send payload with fixed message type ")
+			b.WriteString(strconv.Quote(mt))
+			b.WriteString(".\n")
+			b.WriteString("   * 发送固定 type=")
+			b.WriteString(strconv.Quote(mt))
+			b.WriteString(" 的 payload。\n")
+			b.WriteString("   */\n")
+			b.WriteString("  send")
+			b.WriteString(methodSuffix)
+			b.WriteString("Payload(payload: ")
+			b.WriteString(clientPayloadType)
+			b.WriteString("): void {\n")
+			b.WriteString("    this.send({ type: ")
+			b.WriteString(strconv.Quote(mt))
+			b.WriteString(", payload } as TSend);\n")
 			b.WriteString("  }\n\n")
 		}
 		b.WriteString("}\n")
@@ -686,4 +771,32 @@ func wsMessageTypeMethodSuffix(messageType string) string {
 		return "Type" + base
 	}
 	return base
+}
+
+func sortMessageTypesByDeclaredOrder(declared []string, payloadMap map[string]string) []string {
+	if len(payloadMap) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(payloadMap))
+	for _, mt := range declared {
+		if _, ok := payloadMap[mt]; !ok {
+			continue
+		}
+		if _, ok := seen[mt]; ok {
+			continue
+		}
+		seen[mt] = struct{}{}
+		out = append(out, mt)
+	}
+	rest := make([]string, 0, len(payloadMap)-len(out))
+	for mt := range payloadMap {
+		if _, ok := seen[mt]; ok {
+			continue
+		}
+		rest = append(rest, mt)
+	}
+	sort.Strings(rest)
+	out = append(out, rest...)
+	return out
 }

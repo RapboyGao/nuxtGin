@@ -458,13 +458,19 @@ type wsServerBroadcastPayload struct {
 }
 
 func buildCommonWSTestEndpoint() *WebSocketEndpoint {
-	return &WebSocketEndpoint{
+	endpoint := &WebSocketEndpoint{
 		Name:              "chat_events",
 		Path:              "/chat/events",
 		ClientMessageType: reflect.TypeOf(wsClientEnvelope{}),
 		ServerMessageType: reflect.TypeOf(wsServerEnvelope{}),
 		MessageTypes:      []string{"room:join", "chat:text", "system:ack"},
 	}
+	RegisterWebSocketTypedHandler(endpoint, "room:join", func(payload wsClientJoinRoomPayload, _ *WebSocketContext) (any, error) { return nil, nil })
+	RegisterWebSocketTypedHandler(endpoint, "chat:text", func(payload wsClientChatTextPayload, _ *WebSocketContext) (any, error) { return nil, nil })
+	RegisterWebSocketServerPayloadType[wsServerAckPayload](endpoint, "system:ack")
+	RegisterWebSocketServerPayloadType[wsServerBroadcastPayload](endpoint, "chat:text")
+	RegisterWebSocketServerPayloadType[wsServerBroadcastPayload](endpoint, "room:join")
+	return endpoint
 }
 
 func buildNotifyWSTestEndpoint() *WebSocketEndpoint {
@@ -576,9 +582,6 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "if (options === undefined)") || !strings.Contains(code, "options = { validate: validateWsServerEnvelope };") {
 		t.Fatalf("expected endpoint type handlers to provide default message validator")
 	}
-	if !strings.Contains(code, "options?: TypedHandlerOptions<WsServerEnvelope, TPayload>") {
-		t.Fatalf("expected endpoint payload handlers to keep optional options signature")
-	}
 	if !strings.Contains(code, "function defaultValidatePayload(") || !strings.Contains(code, "return validateWsServerEnvelope(message);") || !strings.Contains(code, "options = { validate: defaultValidatePayload };") {
 		t.Fatalf("expected endpoint payload handlers to provide default message validator")
 	}
@@ -600,8 +603,26 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "onRoomJoinType(") || !strings.Contains(code, "onChatTextType(") || !strings.Contains(code, "onSystemAckType(") {
 		t.Fatalf("expected endpoint-specific on<Type>Type helpers")
 	}
-	if !strings.Contains(code, "onRoomJoinPayload<TPayload>(") || !strings.Contains(code, "onChatTextPayload<TPayload>(") || !strings.Contains(code, "onSystemAckPayload<TPayload>(") {
-		t.Fatalf("expected endpoint-specific on<Type>Payload helpers")
+	if !strings.Contains(code, "onRoomJoinPayload(") || strings.Contains(code, "onRoomJoinPayload<TPayload>(") {
+		t.Fatalf("expected typed payload helper without generic when payload map is available")
+	}
+	if !strings.Contains(code, "options?: TypedHandlerOptions<WsServerEnvelope, WsServerBroadcastPayload>") {
+		t.Fatalf("expected endpoint payload handlers to use mapped payload type options")
+	}
+	if !strings.Contains(code, "options?: TypedHandlerOptions<WsServerEnvelope, WsServerAckPayload>") {
+		t.Fatalf("expected endpoint payload handlers to use mapped ack payload type options")
+	}
+	if !strings.Contains(code, "sendRoomJoinPayload(payload: WsClientJoinRoomPayload): void {") {
+		t.Fatalf("expected typed send helper generation for room:join payload")
+	}
+	if !strings.Contains(code, "sendChatTextPayload(payload: WsClientChatTextPayload): void {") {
+		t.Fatalf("expected typed send helper generation for chat:text payload")
+	}
+	if !strings.Contains(code, "export interface ChatEventsServerPayloadByType") || !strings.Contains(code, `"system:ack": WsServerAckPayload;`) {
+		t.Fatalf("expected server payload map generation for message types")
+	}
+	if !strings.Contains(code, "export interface ChatEventsClientPayloadByType") || !strings.Contains(code, `"chat:text": WsClientChatTextPayload;`) {
+		t.Fatalf("expected client payload map generation for message types")
 	}
 	if !strings.Contains(code, "static readonly MESSAGE_TYPES = [") {
 		t.Fatalf("expected endpoint-specific message type metadata")
@@ -660,6 +681,65 @@ func TestGenerateWebSocketClientFromEndpoints_ExportFile(t *testing.T) {
 	code := string(data)
 	if !strings.Contains(code, "export class TypedWebSocketClient<") {
 		t.Fatalf("expected generated websocket class in output file")
+	}
+}
+
+// TestWebSocketAPIDefaultEnvelopeTypes
+// 这个测试验证 WebSocketAPI 级别的默认封装类型：
+// 当单个 WebSocketEndpoint 未显式设置 ClientMessageType/ServerMessageType 时，
+// 是否会自动继承 WebSocketAPI.DefaultClientMessageType/DefaultServerMessageType，
+// 并正确反映到生成的 TS 类型签名中。
+func TestWebSocketAPIDefaultEnvelopeTypes(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd failed: %v", err)
+	}
+
+	moduleRoot := cwd
+	for {
+		if _, statErr := os.Stat(filepath.Join(moduleRoot, "go.mod")); statErr == nil {
+			break
+		}
+		next := filepath.Dir(moduleRoot)
+		if next == moduleRoot {
+			t.Fatalf("go.mod not found from cwd: %s", cwd)
+		}
+		moduleRoot = next
+	}
+
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	if err := os.Chdir(moduleRoot); err != nil {
+		t.Fatalf("chdir failed: %v", err)
+	}
+
+	ws := &WebSocketEndpoint{
+		Name:         "default_envelope_events",
+		Path:         "/default/events",
+		MessageTypes: []string{"chat:text"},
+	}
+
+	outPath := filepath.Join(".generated", "schema", "sockets", "ws_default_envelope.ts")
+	wsAPI := WebSocketAPI{
+		BasePath:                 "/ws",
+		GroupPath:                "/v1",
+		DefaultClientMessageType: reflect.TypeOf(wsClientEnvelope{}),
+		DefaultServerMessageType: reflect.TypeOf(wsServerEnvelope{}),
+		Endpoints:                []WebSocketEndpointLike{ws},
+	}
+	if err := wsAPI.ExportTS(outPath); err != nil {
+		t.Fatalf("WebSocketAPI.ExportTS returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(moduleRoot, outPath))
+	if err != nil {
+		t.Fatalf("read generated ts file failed: %v", err)
+	}
+	code := string(data)
+	if !strings.Contains(code, "extends TypedWebSocketClient<") || !strings.Contains(code, "WsServerEnvelope,") {
+		t.Fatalf("expected endpoint class to use default server envelope type")
+	}
+	if !strings.Contains(code, "export class DefaultEnvelopeEvents<") || !strings.Contains(code, "TSend = WsClientEnvelope") {
+		t.Fatalf("expected endpoint class to use default client envelope type")
 	}
 }
 

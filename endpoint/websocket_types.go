@@ -28,12 +28,14 @@ type NoMessage struct{}
 // WebSocketEndpointMeta is the metadata view used to generate TypeScript.
 // WebSocketEndpointMeta 是用于 TS 生成的元数据视图。
 type WebSocketEndpointMeta struct {
-	Name              string
-	Path              string
-	Description       string
-	ClientMessageType reflect.Type
-	ServerMessageType reflect.Type
-	MessageTypes      []string
+	Name               string
+	Path               string
+	Description        string
+	ClientMessageType  reflect.Type
+	ServerMessageType  reflect.Type
+	MessageTypes       []string
+	ClientPayloadTypes map[string]reflect.Type
+	ServerPayloadTypes map[string]reflect.Type
 }
 
 // WebSocketEndpointLike is implemented by WebSocketEndpoint to expose metadata and gin handler.
@@ -201,8 +203,10 @@ type WebSocketEndpoint struct {
 
 	// Message types for TS generation. If ClientMessageType is nil, defaults to WebSocketMessage.
 	// 用于 TS 生成的消息类型；若 ClientMessageType 为空则默认 WebSocketMessage。
-	ClientMessageType reflect.Type
-	ServerMessageType reflect.Type
+	ClientMessageType  reflect.Type
+	ServerMessageType  reflect.Type
+	ClientPayloadTypes map[string]reflect.Type
+	ServerPayloadTypes map[string]reflect.Type
 
 	// Optional upgrader configuration. If zero-value, a default upgrader is used.
 	// Upgrader 可选配置；若为空则使用默认 Upgrader。
@@ -228,8 +232,10 @@ type WebSocketEndpoint struct {
 // NewWebSocketEndpoint 构建并初始化 WebSocketEndpoint。
 func NewWebSocketEndpoint() *WebSocketEndpoint {
 	return &WebSocketEndpoint{
-		hub:               newWebSocketHub(),
-		ClientMessageType: reflect.TypeOf(WebSocketMessage{}),
+		hub:                newWebSocketHub(),
+		ClientMessageType:  reflect.TypeOf(WebSocketMessage{}),
+		ClientPayloadTypes: map[string]reflect.Type{},
+		ServerPayloadTypes: map[string]reflect.Type{},
 	}
 }
 
@@ -242,13 +248,26 @@ func (s *WebSocketEndpoint) WebSocketMeta() WebSocketEndpointMeta {
 		clientType = reflect.TypeOf(WebSocketMessage{})
 	}
 	return WebSocketEndpointMeta{
-		Name:              s.Name,
-		Path:              s.Path,
-		Description:       s.Description,
-		ClientMessageType: clientType,
-		ServerMessageType: s.ServerMessageType,
-		MessageTypes:      append([]string(nil), s.MessageTypes...),
+		Name:               s.Name,
+		Path:               s.Path,
+		Description:        s.Description,
+		ClientMessageType:  clientType,
+		ServerMessageType:  s.ServerMessageType,
+		MessageTypes:       append([]string(nil), s.MessageTypes...),
+		ClientPayloadTypes: copyMessagePayloadTypeMap(s.ClientPayloadTypes),
+		ServerPayloadTypes: copyMessagePayloadTypeMap(s.ServerPayloadTypes),
 	}
+}
+
+func copyMessagePayloadTypeMap(src map[string]reflect.Type) map[string]reflect.Type {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]reflect.Type, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
 }
 
 // GinHandler upgrades and handles websocket connections.
@@ -455,6 +474,10 @@ func RegisterWebSocketTypedHandler[Payload any](
 	if endpoint.MessageHandlers == nil {
 		endpoint.MessageHandlers = map[string]func(payload json.RawMessage, ctx *WebSocketContext) (any, error){}
 	}
+	if endpoint.ClientPayloadTypes == nil {
+		endpoint.ClientPayloadTypes = map[string]reflect.Type{}
+	}
+	endpoint.ClientPayloadTypes[messageType] = typeOf[Payload]()
 	endpoint.MessageHandlers[messageType] = func(payload json.RawMessage, ctx *WebSocketContext) (any, error) {
 		var typed Payload
 		if len(payload) > 0 {
@@ -464,6 +487,18 @@ func RegisterWebSocketTypedHandler[Payload any](
 		}
 		return handler(typed, ctx)
 	}
+}
+
+// RegisterWebSocketServerPayloadType registers a typed server payload schema for one message type.
+// RegisterWebSocketServerPayloadType 注册服务端消息类型对应的 payload 类型。
+func RegisterWebSocketServerPayloadType[Payload any](endpoint *WebSocketEndpoint, messageType string) {
+	if endpoint == nil {
+		return
+	}
+	if endpoint.ServerPayloadTypes == nil {
+		endpoint.ServerPayloadTypes = map[string]reflect.Type{}
+	}
+	endpoint.ServerPayloadTypes[messageType] = typeOf[Payload]()
 }
 
 // WebSocketMessage is a default envelope for multi-handler messages.

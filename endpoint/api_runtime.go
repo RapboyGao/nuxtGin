@@ -3,6 +3,7 @@ package endpoint
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -135,6 +136,14 @@ type WebSocketAPI struct {
 	// Endpoints contains all websocket endpoints under this API group.
 	// Endpoints 包含该 API 分组下的全部 websocket 端点。
 	Endpoints []WebSocketEndpointLike
+
+	// DefaultClientMessageType is the default envelope type for endpoint.ClientMessageType.
+	// DefaultClientMessageType 作为 endpoint.ClientMessageType 的默认封装类型。
+	DefaultClientMessageType reflect.Type
+
+	// DefaultServerMessageType is the default envelope type for endpoint.ServerMessageType.
+	// DefaultServerMessageType 作为 endpoint.ServerMessageType 的默认封装类型。
+	DefaultServerMessageType reflect.Type
 }
 
 // BuildGinGroup registers all websocket endpoints and returns the RouterGroup.
@@ -143,6 +152,7 @@ func (s WebSocketAPI) BuildGinGroup(engine *gin.Engine) (*gin.RouterGroup, error
 	if engine == nil {
 		return nil, errors.New("engine is nil")
 	}
+	s.applyDefaults()
 	groupPath := resolveAPIPath(s.BasePath, s.GroupPath)
 	if strings.TrimSpace(groupPath) == "" {
 		return nil, errors.New("base path or group path is required")
@@ -160,6 +170,7 @@ func (s WebSocketAPI) ExportTS(relativeTSPath string) error {
 	if !shouldExportTSInCurrentEnv() {
 		return nil
 	}
+	s.applyDefaults()
 	if strings.TrimSpace(relativeTSPath) == "" {
 		relativeTSPath = "vue/composables/auto-generated-ws.ts"
 	}
@@ -169,6 +180,7 @@ func (s WebSocketAPI) ExportTS(relativeTSPath string) error {
 // Build builds gin.RouterGroup and exports TS in one call.
 // Build 一次性完成 RouterGroup 构建与 TS 导出。
 func (s WebSocketAPI) Build(engine *gin.Engine, relativeTSPath string) (*gin.RouterGroup, error) {
+	s.applyDefaults()
 	group, err := s.BuildGinGroup(engine)
 	if err != nil {
 		return nil, err
@@ -177,6 +189,21 @@ func (s WebSocketAPI) Build(engine *gin.Engine, relativeTSPath string) (*gin.Rou
 		return nil, err
 	}
 	return group, nil
+}
+
+func (s WebSocketAPI) applyDefaults() {
+	for i := range s.Endpoints {
+		ws, ok := s.Endpoints[i].(*WebSocketEndpoint)
+		if !ok || ws == nil {
+			continue
+		}
+		if ws.ClientMessageType == nil || ws.ClientMessageType.Kind() == reflect.Invalid {
+			ws.ClientMessageType = s.DefaultClientMessageType
+		}
+		if ws.ServerMessageType == nil || ws.ServerMessageType.Kind() == reflect.Invalid {
+			ws.ServerMessageType = s.DefaultServerMessageType
+		}
+	}
 }
 
 // ApplyWebSocketEndpoints registers endpoints to gin.Engine and exports TS in one call.
