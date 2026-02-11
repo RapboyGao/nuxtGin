@@ -624,7 +624,7 @@ func renderWebSocketTS(basePath string, groupPath string, registry *tsInterfaceR
 			b.WriteString(m.ServerType)
 			b.WriteString(">\n")
 			b.WriteString("  ): () => void {\n")
-			b.WriteString("    return this.onType(type, (message) => handler(message as Extract<")
+			b.WriteString("    return this.onType(type, (message) => handler(message as unknown as Extract<")
 			b.WriteString(receiveUnionAlias)
 			b.WriteString(", { type: TType }>), options);\n")
 			b.WriteString("  }\n\n")
@@ -685,7 +685,7 @@ func renderWebSocketTS(basePath string, groupPath string, registry *tsInterfaceR
 			b.WriteString(strconv.Quote(mt))
 			b.WriteString(" as ")
 			b.WriteString(messageTypeAlias)
-			b.WriteString(", (message) => handler(message as ")
+			b.WriteString(", (message) => handler(message as unknown as ")
 			if serverPayloadType == "unknown" {
 				b.WriteString(m.ServerType)
 			} else {
