@@ -143,8 +143,8 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "// ignore single listener errors and continue dispatch") {
 		t.Fatalf("expected listener dispatch fallback behavior")
 	}
-	if !strings.Contains(code, "new TypedWebSocketClient<") {
-		t.Fatalf("expected endpoint factory to return class instance")
+	if !strings.Contains(code, "export class ChatEvents<") || !strings.Contains(code, "extends TypedWebSocketClient<") || !strings.Contains(code, "ChatEventsMessageType") {
+		t.Fatalf("expected endpoint-specific class extending TypedWebSocketClient")
 	}
 	if !strings.Contains(code, "export function chatEvents<TSend =") {
 		t.Fatalf("expected endpoint factory to allow custom send union types")
@@ -152,11 +152,23 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "export type ChatEventsMessageType =") || !strings.Contains(code, "chat:text") || !strings.Contains(code, "room:join") || !strings.Contains(code, "system:ack") {
 		t.Fatalf("expected message type union alias generation")
 	}
-	if !strings.Contains(code, "TypedWebSocketClient<WsServerMessageEnvelope, TSend, ChatEventsMessageType>") {
-		t.Fatalf("expected endpoint factory return type to use renamed server message type")
+	if !strings.Contains(code, "): ChatEvents<TSend> {") {
+		t.Fatalf("expected endpoint factory return type to be endpoint-specific class")
 	}
 	if !strings.Contains(code, "export function chatEvents<TSend =") {
 		t.Fatalf("expected endpoint factory function generation")
+	}
+	if !strings.Contains(code, "return new ChatEvents<TSend>(options);") {
+		t.Fatalf("expected endpoint factory to instantiate endpoint-specific class")
+	}
+	if !strings.Contains(code, "onRoomJoinType(") || !strings.Contains(code, "onChatTextType(") || !strings.Contains(code, "onSystemAckType(") {
+		t.Fatalf("expected endpoint-specific on<Type>Type helpers")
+	}
+	if !strings.Contains(code, "onRoomJoinPayload<TPayload>(") || !strings.Contains(code, "onChatTextPayload<TPayload>(") || !strings.Contains(code, "onSystemAckPayload<TPayload>(") {
+		t.Fatalf("expected endpoint-specific on<Type>Payload helpers")
+	}
+	if !strings.Contains(code, "static readonly MESSAGE_TYPES = [") {
+		t.Fatalf("expected endpoint-specific message type metadata")
 	}
 	if !strings.Contains(code, "options: WebSocketConvertOptions<TSend, WsServerMessageEnvelope>") {
 		t.Fatalf("expected required options in endpoint factory")

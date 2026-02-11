@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -363,6 +364,8 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 
 	basePath := strings.TrimSpace(baseURL)
 	for _, m := range metas {
+		className := toUpperCamel(m.FuncName)
+		messageTypeAlias := className + "MessageType"
 		if m.Description != "" {
 			b.WriteString("/**\n")
 			b.WriteString(" * ")
@@ -373,33 +376,99 @@ func renderWebSocketTS(baseURL string, registry *tsInterfaceRegistry, metas []ws
 		b.WriteString("// Literal union is emitted as type because interface cannot model union values.\n")
 		b.WriteString("// 字面量联合类型使用 type，因为 interface 不能表达联合值。\n")
 		b.WriteString("export type ")
-		b.WriteString(toUpperCamel(m.FuncName))
+		b.WriteString(className)
 		b.WriteString("MessageType = ")
 		b.WriteString(renderMessageTypeUnion(m.MessageTypes))
 		b.WriteString(";\n")
+		b.WriteString("export class ")
+		b.WriteString(className)
+		b.WriteString("<TSend = ")
+		b.WriteString(m.ClientType)
+		b.WriteString("> extends TypedWebSocketClient<")
+		b.WriteString(m.ServerType)
+		b.WriteString(", TSend, ")
+		b.WriteString(messageTypeAlias)
+		b.WriteString("> {\n")
+		b.WriteString("  static readonly NAME = '")
+		b.WriteString(strings.ReplaceAll(m.FuncName, "'", "\\'"))
+		b.WriteString("' as const;\n")
+		b.WriteString("  static readonly PATH = '")
+		b.WriteString(strings.ReplaceAll(m.Path, "'", "\\'"))
+		b.WriteString("' as const;\n")
+		b.WriteString("  static readonly MESSAGE_TYPES = [")
+		for i, t := range m.MessageTypes {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString("'")
+			b.WriteString(strings.ReplaceAll(t, "'", "\\'"))
+			b.WriteString("'")
+		}
+		b.WriteString("] as const;\n")
+		b.WriteString("  public readonly endpointName = ")
+		b.WriteString(className)
+		b.WriteString(".NAME;\n")
+		b.WriteString("  public readonly endpointPath = ")
+		b.WriteString(className)
+		b.WriteString(".PATH;\n\n")
+		b.WriteString("  constructor(options: WebSocketConvertOptions<TSend, ")
+		b.WriteString(m.ServerType)
+		b.WriteString(">) {\n")
+		b.WriteString("    const url = joinURLPath('")
+		b.WriteString(strings.ReplaceAll(basePath, "'", "\\'"))
+		b.WriteString("', '")
+		b.WriteString(strings.ReplaceAll(m.Path, "'", "\\'"))
+		b.WriteString("');\n")
+		b.WriteString("    super(url, options);\n")
+		b.WriteString("  }\n\n")
+		for _, mt := range m.MessageTypes {
+			methodSuffix := wsMessageTypeMethodSuffix(mt)
+			b.WriteString("  on")
+			b.WriteString(methodSuffix)
+			b.WriteString("Type(\n")
+			b.WriteString("    handler: (message: ")
+			b.WriteString(m.ServerType)
+			b.WriteString(") => void,\n")
+			b.WriteString("    options?: TypeHandlerOptions<")
+			b.WriteString(m.ServerType)
+			b.WriteString(">\n")
+			b.WriteString("  ): () => void {\n")
+			b.WriteString("    return this.onType(")
+			b.WriteString(strconv.Quote(mt))
+			b.WriteString(" as ")
+			b.WriteString(messageTypeAlias)
+			b.WriteString(", handler, options);\n")
+			b.WriteString("  }\n\n")
+			b.WriteString("  on")
+			b.WriteString(methodSuffix)
+			b.WriteString("Payload<TPayload>(\n")
+			b.WriteString("    handler: (payload: TPayload, message: ")
+			b.WriteString(m.ServerType)
+			b.WriteString(") => void,\n")
+			b.WriteString("    options?: TypedHandlerOptions<")
+			b.WriteString(m.ServerType)
+			b.WriteString(", TPayload>\n")
+			b.WriteString("  ): () => void {\n")
+			b.WriteString("    return this.onTyped<TPayload>(")
+			b.WriteString(strconv.Quote(mt))
+			b.WriteString(" as ")
+			b.WriteString(messageTypeAlias)
+			b.WriteString(", handler, options);\n")
+			b.WriteString("  }\n\n")
+		}
+		b.WriteString("}\n")
 		b.WriteString("export function ")
 		b.WriteString(m.FuncName)
 		b.WriteString("<TSend = ")
 		b.WriteString(m.ClientType)
 		b.WriteString(">(options: WebSocketConvertOptions<TSend, ")
 		b.WriteString(m.ServerType)
-		b.WriteString(">): TypedWebSocketClient<")
-		b.WriteString(m.ServerType)
-		b.WriteString(", TSend, ")
-		b.WriteString(toUpperCamel(m.FuncName))
-		b.WriteString("MessageType> {\n")
-		b.WriteString("  const url = joinURLPath('")
-		b.WriteString(strings.ReplaceAll(basePath, "'", "\\'"))
-		b.WriteString("', '")
-		b.WriteString(strings.ReplaceAll(m.Path, "'", "\\'"))
-		b.WriteString("');\n")
-		b.WriteString("  return new TypedWebSocketClient<")
-		b.WriteString(m.ServerType)
-		b.WriteString(", ")
-		b.WriteString("TSend, ")
-		b.WriteString(toUpperCamel(m.FuncName))
-		b.WriteString("MessageType")
-		b.WriteString(">(url, options);\n")
+		b.WriteString(">): ")
+		b.WriteString(className)
+		b.WriteString("<TSend> {\n")
+		b.WriteString("  return new ")
+		b.WriteString(className)
+		b.WriteString("<TSend>(options);\n")
 		b.WriteString("}\n\n")
 	}
 
@@ -483,4 +552,28 @@ func renderMessageTypeUnion(types []string) string {
 		parts = append(parts, "'"+strings.ReplaceAll(t, "'", "\\'")+"'")
 	}
 	return strings.Join(parts, " | ")
+}
+
+func wsMessageTypeMethodSuffix(messageType string) string {
+	parts := strings.FieldsFunc(messageType, func(r rune) bool {
+		if r >= 'a' && r <= 'z' {
+			return false
+		}
+		if r >= 'A' && r <= 'Z' {
+			return false
+		}
+		if r >= '0' && r <= '9' {
+			return false
+		}
+		return true
+	})
+	base := toUpperCamel(strings.Join(parts, " "))
+	if base == "" {
+		return "Message"
+	}
+	first := base[0]
+	if first >= '0' && first <= '9' {
+		return "Type" + base
+	}
+	return base
 }
