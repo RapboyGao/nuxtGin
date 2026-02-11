@@ -685,7 +685,17 @@ func renderWebSocketTS(basePath string, groupPath string, registry *tsInterfaceR
 			b.WriteString(strconv.Quote(mt))
 			b.WriteString(" as ")
 			b.WriteString(messageTypeAlias)
-			b.WriteString(", handler, options);\n")
+			b.WriteString(", (message) => handler(message as ")
+			if serverPayloadType == "unknown" {
+				b.WriteString(m.ServerType)
+			} else {
+				b.WriteString("{ type: ")
+				b.WriteString(strconv.Quote(mt))
+				b.WriteString("; payload: ")
+				b.WriteString(serverPayloadType)
+				b.WriteString(" }")
+			}
+			b.WriteString("), options);\n")
 			b.WriteString("  }\n\n")
 			b.WriteString("  /**\n")
 			b.WriteString("   * Subscribe to payload of messages with type ")
