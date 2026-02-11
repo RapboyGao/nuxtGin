@@ -534,43 +534,43 @@ func renderAxiosTS(baseURL string, registry *tsInterfaceRegistry, metas []axiosF
 				b.WriteString(m.ResponseType)
 				b.WriteString(";\n")
 			}
-			}
-			b.WriteString("  }\n")
-			b.WriteString("}\n\n")
-			b.WriteString("export async function request")
-			b.WriteString(className)
-			b.WriteString("(")
-			b.WriteString(strings.Join(args, ", "))
-			if len(args) > 0 {
-				b.WriteString(", ")
-			}
-			b.WriteString("options?: AxiosConvertOptions<")
-			if m.HasReqBody {
-				b.WriteString(m.RequestType)
-			} else {
-				b.WriteString("never")
-			}
-			b.WriteString(", ")
-			b.WriteString(m.ResponseType)
-			b.WriteString(">")
-			b.WriteString("): Promise<")
-			b.WriteString(m.ResponseType)
-			b.WriteString("> {\n")
-			wrapperCallArgs := make([]string, 0, 3)
-			if m.HasParams {
-				wrapperCallArgs = append(wrapperCallArgs, "params")
-			}
-			if m.HasReqBody {
-				wrapperCallArgs = append(wrapperCallArgs, "requestBody")
-			}
-			wrapperCallArgs = append(wrapperCallArgs, "options")
-			b.WriteString("  return ")
-			b.WriteString(className)
-			b.WriteString(".request(")
-			b.WriteString(strings.Join(wrapperCallArgs, ", "))
-			b.WriteString(");\n")
-			b.WriteString("}\n\n")
 		}
+		b.WriteString("  }\n")
+		b.WriteString("}\n\n")
+		b.WriteString("export async function request")
+		b.WriteString(className)
+		b.WriteString("(")
+		b.WriteString(strings.Join(args, ", "))
+		if len(args) > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString("options?: AxiosConvertOptions<")
+		if m.HasReqBody {
+			b.WriteString(m.RequestType)
+		} else {
+			b.WriteString("never")
+		}
+		b.WriteString(", ")
+		b.WriteString(m.ResponseType)
+		b.WriteString(">")
+		b.WriteString("): Promise<")
+		b.WriteString(m.ResponseType)
+		b.WriteString("> {\n")
+		wrapperCallArgs := make([]string, 0, 3)
+		if m.HasParams {
+			wrapperCallArgs = append(wrapperCallArgs, "params")
+		}
+		if m.HasReqBody {
+			wrapperCallArgs = append(wrapperCallArgs, "requestBody")
+		}
+		wrapperCallArgs = append(wrapperCallArgs, "options")
+		b.WriteString("  return ")
+		b.WriteString(className)
+		b.WriteString(".request(")
+		b.WriteString(strings.Join(wrapperCallArgs, ", "))
+		b.WriteString(");\n")
+		b.WriteString("}\n\n")
+	}
 	writeTSMarkerEnd(&b, "Endpoint Classes")
 
 	return finalizeTypeScriptCode(b.String()), nil
