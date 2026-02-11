@@ -8,6 +8,10 @@
 
 🧩 A pragmatic Go toolkit that combines **Gin + Nuxt** and provides a **typed API layer** with **TypeScript client generation** for both HTTP and WebSocket.
 
+Quick Jump:
+
+- [中文说明（跳转）](#中文说明)
+
 This package is primarily designed for and validated in:
 
 - [nuxt-gin-starter](https://github.com/RapboyGao/nuxt-gin-starter)
@@ -155,6 +159,8 @@ Generated WS TS includes:
 - `onType(...)` and `onTyped(...)`
 - generated validators + `ensureXxx(...)`
 - optional message-type union aliases when endpoint declares `MessageTypes`
+- per-endpoint discriminated unions: `XxxReceiveUnion` / `XxxSendUnion`
+- typed helpers: `onTypedMessage(...)` and `sendTypedMessage(...)`
 
 ### Recommended Envelope Shape
 
@@ -167,7 +173,16 @@ type ChatEnvelope struct {
 }
 ```
 
-Then dispatch by `Type` and decode `Payload` per message type via typed handlers.
+Then:
+
+- declare `MessageTypes` on endpoint
+- register client payload mapping via `RegisterWebSocketTypedHandler(...)`
+- register server payload mapping via `RegisterWebSocketServerPayloadType(...)`
+
+Validation rule:
+
+- if `MessageTypes` is set, every message type must exist in both client/server payload maps
+- invalid mapping fails fast during build/export
 
 ### `TypedWebSocketClient` runtime members
 
@@ -243,6 +258,41 @@ README.zh-CN.md
 - Dev mode is inferred when `node_modules` exists in the project root.
 - If you need fully custom Gin handler behavior, use `CustomEndpoint`.
 - Recommended starter project: [Nuxt Gin Starter](https://github.com/RapboyGao/nuxt-gin-starter)
+
+## 中文说明
+
+`nuxtGin` 是一个结合 **Gin + Nuxt** 的 Go 工具包，核心目标是：
+
+- 用 Go 定义强类型 HTTP/WebSocket API
+- 自动生成可直接在前端使用的 TypeScript 客户端代码
+- 降低前后端协议维护成本
+
+推荐使用场景：
+
+- 与 [nuxt-gin-starter](https://github.com/RapboyGao/nuxt-gin-starter) 配合使用
+
+主要功能：
+
+- HTTP API 端点定义与 TS Axios 客户端生成
+- WebSocket 端点定义与 TS 客户端生成
+- 支持 `tsdoc`（字段注释）与 `tsunion`（字面量联合）
+- 生成 `validator + ensure`，并支持 WS 的按消息类型 payload 映射
+
+WebSocket 推荐协议：
+
+- 使用统一 Envelope：`{ type, payload }`
+- 在 endpoint 中声明 `MessageTypes`
+- 通过 `RegisterWebSocketTypedHandler(...)` 注册客户端 payload 类型
+- 通过 `RegisterWebSocketServerPayloadType(...)` 注册服务端 payload 类型
+
+路径说明（生成 TS class）：
+
+- `PATHS.base`：BasePath
+- `PATHS.group`：GroupPath
+- `PATHS.api`：接口自身路径
+- `FULL_PATH`：实际请求/连接路径
+
+如需完整中文文档，也可查看：`README.zh-CN.md`。
 
 ## 📄 License
 

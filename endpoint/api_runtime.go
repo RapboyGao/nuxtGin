@@ -251,6 +251,9 @@ func registerWebSocketHandlers(router gin.IRouter, groupPath string, endpoints [
 		if strings.TrimSpace(meta.Path) == "" {
 			return fmt.Errorf("register websocket endpoint[%d] failed: path is required", i)
 		}
+		if err := validateWebSocketPayloadTypeMappings(meta); err != nil {
+			return fmt.Errorf("register websocket endpoint[%d] failed: %w", i, err)
+		}
 		fullPath := joinWSPath(groupPath, meta.Path)
 		endpoints[i].SetFullPath(fullPath)
 		router.GET(meta.Path, endpoints[i].GinHandler())

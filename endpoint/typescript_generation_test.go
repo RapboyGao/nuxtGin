@@ -434,6 +434,8 @@ type wsClientChatTextPayload struct {
 	Text   string `json:"text" tsdoc:"文本内容 / Message text"`
 }
 
+type wsClientNoPayload struct{}
+
 type wsServerEnvelope struct {
 	Type    string          `json:"type" tsdoc:"服务端消息类型 / Server message type"`
 	Payload wsServerPayload `json:"payload" tsdoc:"服务端消息载荷 / Server message payload"`
@@ -467,6 +469,7 @@ func buildCommonWSTestEndpoint() *WebSocketEndpoint {
 	}
 	RegisterWebSocketTypedHandler(endpoint, "room:join", func(payload wsClientJoinRoomPayload, _ *WebSocketContext) (any, error) { return nil, nil })
 	RegisterWebSocketTypedHandler(endpoint, "chat:text", func(payload wsClientChatTextPayload, _ *WebSocketContext) (any, error) { return nil, nil })
+	RegisterWebSocketTypedHandler(endpoint, "system:ack", func(payload wsClientNoPayload, _ *WebSocketContext) (any, error) { return nil, nil })
 	RegisterWebSocketServerPayloadType[wsServerAckPayload](endpoint, "system:ack")
 	RegisterWebSocketServerPayloadType[wsServerBroadcastPayload](endpoint, "chat:text")
 	RegisterWebSocketServerPayloadType[wsServerBroadcastPayload](endpoint, "room:join")
@@ -474,13 +477,18 @@ func buildCommonWSTestEndpoint() *WebSocketEndpoint {
 }
 
 func buildNotifyWSTestEndpoint() *WebSocketEndpoint {
-	return &WebSocketEndpoint{
+	endpoint := &WebSocketEndpoint{
 		Name:              "notify_events",
 		Path:              "/notify/events",
 		ClientMessageType: reflect.TypeOf(wsClientEnvelope{}),
 		ServerMessageType: reflect.TypeOf(wsServerEnvelope{}),
 		MessageTypes:      []string{"notify:new", "notify:read"},
 	}
+	RegisterWebSocketTypedHandler(endpoint, "notify:new", func(payload wsClientChatTextPayload, _ *WebSocketContext) (any, error) { return nil, nil })
+	RegisterWebSocketTypedHandler(endpoint, "notify:read", func(payload wsClientNoPayload, _ *WebSocketContext) (any, error) { return nil, nil })
+	RegisterWebSocketServerPayloadType[wsServerBroadcastPayload](endpoint, "notify:new")
+	RegisterWebSocketServerPayloadType[wsServerAckPayload](endpoint, "notify:read")
+	return endpoint
 }
 
 // TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers
@@ -564,6 +572,12 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	if !strings.Contains(code, "onTyped<TPayload>(") {
 		t.Fatalf("expected onTyped generic payload handler registration")
 	}
+	if !strings.Contains(code, "onTypedMessage<TType extends ChatEventsMessageType>(") {
+		t.Fatalf("expected discriminated receive union helper generation")
+	}
+	if !strings.Contains(code, "sendTypedMessage(message: ChatEventsSendUnion): void {") {
+		t.Fatalf("expected discriminated send union helper generation")
+	}
 	if !strings.Contains(code, "validate?: (message: TReceive) => boolean;") {
 		t.Fatalf("expected onType validator options generation")
 	}
@@ -623,6 +637,12 @@ func TestGenerateWebSocketClientFromEndpoints_ClassAndTypedHandlers(t *testing.T
 	}
 	if !strings.Contains(code, "export interface ChatEventsClientPayloadByType") || !strings.Contains(code, `"chat:text": WsClientChatTextPayload;`) {
 		t.Fatalf("expected client payload map generation for message types")
+	}
+	if !strings.Contains(code, "export type ChatEventsReceiveUnion =") || !strings.Contains(code, `{ type: "chat:text"; payload: WsServerBroadcastPayload }`) {
+		t.Fatalf("expected receive discriminated union generation")
+	}
+	if !strings.Contains(code, "export type ChatEventsSendUnion =") || !strings.Contains(code, `{ type: "room:join"; payload: WsClientJoinRoomPayload }`) {
+		t.Fatalf("expected send discriminated union generation")
 	}
 	if !strings.Contains(code, "static readonly MESSAGE_TYPES = [") {
 		t.Fatalf("expected endpoint-specific message type metadata")
@@ -717,6 +737,8 @@ func TestWebSocketAPIDefaultEnvelopeTypes(t *testing.T) {
 		Path:         "/default/events",
 		MessageTypes: []string{"chat:text"},
 	}
+	RegisterWebSocketTypedHandler(ws, "chat:text", func(payload wsClientChatTextPayload, _ *WebSocketContext) (any, error) { return nil, nil })
+	RegisterWebSocketServerPayloadType[wsServerBroadcastPayload](ws, "chat:text")
 
 	outPath := filepath.Join(".generated", "schema", "sockets", "ws_default_envelope.ts")
 	wsAPI := WebSocketAPI{
@@ -812,6 +834,19 @@ func TestGenerateWebSocketClientFromEndpoints_ValidationErrors(t *testing.T) {
 			},
 			wantErr: "server message type is required",
 		},
+		{
+			name: "missing payload mapping",
+			endpoints: []WebSocketEndpointLike{
+				&WebSocketEndpoint{
+					Name:              "bad_ws",
+					Path:              "/bad",
+					ClientMessageType: reflect.TypeOf(wsClientEnvelope{}),
+					ServerMessageType: reflect.TypeOf(wsServerEnvelope{}),
+					MessageTypes:      []string{"chat:text"},
+				},
+			},
+			wantErr: "client payload map is required",
+		},
 	}
 
 	for _, tt := range tests {
@@ -824,6 +859,34 @@ func TestGenerateWebSocketClientFromEndpoints_ValidationErrors(t *testing.T) {
 				t.Fatalf("expected error containing %q, got: %v", tt.wantErr, err)
 			}
 		})
+	}
+}
+
+// TestWebSocketAPIBuildGinGroup_PayloadMapValidation
+// 这个测试验证服务启动阶段的配置校验：
+// 当声明 MessageTypes 但未提供 client/server payload 映射时，
+// BuildGinGroup 必须直接失败，避免服务运行后才出现协议不一致。
+func TestWebSocketAPIBuildGinGroup_PayloadMapValidation(t *testing.T) {
+	engine := gin.New()
+	api := WebSocketAPI{
+		BasePath:  "/ws",
+		GroupPath: "/v1",
+		Endpoints: []WebSocketEndpointLike{
+			&WebSocketEndpoint{
+				Name:              "bad_ws",
+				Path:              "/events",
+				ClientMessageType: reflect.TypeOf(wsClientEnvelope{}),
+				ServerMessageType: reflect.TypeOf(wsServerEnvelope{}),
+				MessageTypes:      []string{"chat:text"},
+			},
+		},
+	}
+	_, err := api.BuildGinGroup(engine)
+	if err == nil {
+		t.Fatalf("expected payload mapping validation error")
+	}
+	if !strings.Contains(err.Error(), "client payload map is required") {
+		t.Fatalf("expected payload map validation error, got: %v", err)
 	}
 }
 
@@ -896,6 +959,12 @@ func TestExportUnifiedAPIsToTSFiles(t *testing.T) {
 	}
 	if !strings.Contains(wsCode, "from './unified_shared'") {
 		t.Fatalf("expected ws ts to import unified shared schema")
+	}
+	if !strings.Contains(wsCode, `base: "/ws"`) || !strings.Contains(wsCode, `group: "/v1"`) {
+		t.Fatalf("expected ws unified export to keep base/group path metadata")
+	}
+	if !strings.Contains(wsCode, "ChatEventsReceiveUnion") || !strings.Contains(wsCode, "sendTypedMessage(message: ChatEventsSendUnion): void {") {
+		t.Fatalf("expected ws unified export to include discriminated unions and typed send helper")
 	}
 	if strings.Contains(serverCode, "// #region Interfaces & Validators") {
 		t.Fatalf("expected server ts to remove inlined interfaces section")

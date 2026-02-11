@@ -42,6 +42,9 @@ func generateWebSocketClientFromEndpoints(basePath string, groupPath string, end
 		if err := validateWebSocketMeta(meta); err != nil {
 			return "", fmt.Errorf("websocket endpoint[%d] validation failed: %w", i, err)
 		}
+		if err := validateWebSocketPayloadTypeMappings(meta); err != nil {
+			return "", fmt.Errorf("websocket endpoint[%d] validation failed: %w", i, err)
+		}
 
 		base := wsBaseName(meta, i)
 
@@ -503,6 +506,8 @@ func renderWebSocketTS(basePath string, groupPath string, registry *tsInterfaceR
 		messageTypeAlias := className + "MessageType"
 		serverPayloadMapAlias := className + "ServerPayloadByType"
 		clientPayloadMapAlias := className + "ClientPayloadByType"
+		receiveUnionAlias := className + "ReceiveUnion"
+		sendUnionAlias := className + "SendUnion"
 		if m.Description != "" {
 			b.WriteString("/**\n")
 			b.WriteString(" * ")
@@ -542,6 +547,20 @@ func renderWebSocketTS(basePath string, groupPath string, registry *tsInterfaceR
 				b.WriteString(";\n")
 			}
 			b.WriteString("}\n")
+		}
+		if len(m.ServerPayloadByType) > 0 {
+			b.WriteString("export type ")
+			b.WriteString(receiveUnionAlias)
+			b.WriteString(" = ")
+			b.WriteString(renderTypePayloadUnion(m.MessageTypes, m.ServerPayloadByType))
+			b.WriteString(";\n")
+		}
+		if len(m.ClientPayloadByType) > 0 {
+			b.WriteString("export type ")
+			b.WriteString(sendUnionAlias)
+			b.WriteString(" = ")
+			b.WriteString(renderTypePayloadUnion(m.MessageTypes, m.ClientPayloadByType))
+			b.WriteString(";\n")
 		}
 		b.WriteString("export class ")
 		b.WriteString(className)
@@ -593,6 +612,30 @@ func renderWebSocketTS(basePath string, groupPath string, registry *tsInterfaceR
 		b.WriteString(".FULL_PATH;\n")
 		b.WriteString("    super(url, options);\n")
 		b.WriteString("  }\n\n")
+		if len(m.ServerPayloadByType) > 0 {
+			b.WriteString("  onTypedMessage<TType extends ")
+			b.WriteString(messageTypeAlias)
+			b.WriteString(">(\n")
+			b.WriteString("    type: TType,\n")
+			b.WriteString("    handler: (message: Extract<")
+			b.WriteString(receiveUnionAlias)
+			b.WriteString(", { type: TType }>) => void,\n")
+			b.WriteString("    options?: TypeHandlerOptions<")
+			b.WriteString(m.ServerType)
+			b.WriteString(">\n")
+			b.WriteString("  ): () => void {\n")
+			b.WriteString("    return this.onType(type, (message) => handler(message as Extract<")
+			b.WriteString(receiveUnionAlias)
+			b.WriteString(", { type: TType }>), options);\n")
+			b.WriteString("  }\n\n")
+		}
+		if len(m.ClientPayloadByType) > 0 {
+			b.WriteString("  sendTypedMessage(message: ")
+			b.WriteString(sendUnionAlias)
+			b.WriteString("): void {\n")
+			b.WriteString("    this.send(message as TSend);\n")
+			b.WriteString("  }\n\n")
+		}
 		for _, mt := range m.MessageTypes {
 			methodSuffix := wsMessageTypeMethodSuffix(mt)
 			serverPayloadType := "unknown"
@@ -619,7 +662,15 @@ func renderWebSocketTS(basePath string, groupPath string, registry *tsInterfaceR
 			b.WriteString(methodSuffix)
 			b.WriteString("Type(\n")
 			b.WriteString("    handler: (message: ")
-			b.WriteString(m.ServerType)
+			if serverPayloadType == "unknown" {
+				b.WriteString(m.ServerType)
+			} else {
+				b.WriteString("{ type: ")
+				b.WriteString(strconv.Quote(mt))
+				b.WriteString("; payload: ")
+				b.WriteString(serverPayloadType)
+				b.WriteString(" }")
+			}
 			b.WriteString(") => void,\n")
 			b.WriteString("    options?: TypeHandlerOptions<")
 			b.WriteString(m.ServerType)
@@ -745,6 +796,22 @@ func renderMessageTypeUnion(types []string) string {
 	parts := make([]string, 0, len(types))
 	for _, t := range types {
 		parts = append(parts, "'"+strings.ReplaceAll(t, "'", "\\'")+"'")
+	}
+	return strings.Join(parts, " | ")
+}
+
+func renderTypePayloadUnion(types []string, payloadByType map[string]string) string {
+	orderedTypes := sortMessageTypesByDeclaredOrder(types, payloadByType)
+	if len(orderedTypes) == 0 {
+		return "never"
+	}
+	parts := make([]string, 0, len(orderedTypes))
+	for _, mt := range orderedTypes {
+		payloadType := strings.TrimSpace(payloadByType[mt])
+		if payloadType == "" {
+			payloadType = "unknown"
+		}
+		parts = append(parts, "{ type: "+strconv.Quote(mt)+"; payload: "+payloadType+" }")
 	}
 	return strings.Join(parts, " | ")
 }
