@@ -37,18 +37,23 @@ type APIServerConfig struct {
 	ExportUnifiedTS bool
 }
 
-// DefaultAPIServerConfig returns a fully initialized default config.
-// DefaultAPIServerConfig 返回一份可直接使用的默认配置。
-func DefaultAPIServerConfig() APIServerConfig {
+// DefaultAPIServerConfig returns a fully initialized default config with endpoints.
+// DefaultAPIServerConfig 返回一份可直接使用的默认配置，并注入 Endpoints。
+func DefaultAPIServerConfig(
+	endpoints []endpoint.EndpointLike,
+	wsEndpoints []endpoint.WebSocketEndpointLike,
+) APIServerConfig {
 	config := APIServerConfig{
 		Server: *GetConfig,
 		ServerAPI: endpoint.ServerAPI{
-			BasePath:  "/api-go/v1",
-			GroupPath: "/api-go/v1",
+			BasePath:  "/api-go",
+			GroupPath: "/v1",
+			Endpoints: endpoints,
 		},
 		WebSocketAPI: endpoint.WebSocketAPI{
-			BasePath:  "/ws-go/v1",
-			GroupPath: "/ws-go/v1",
+			BasePath:  "/ws-go",
+			GroupPath: "/v1",
+			Endpoints: wsEndpoints,
 		},
 		ServerTSPath:    "vue/composables/auto-generated-api.ts",
 		WebSocketTSPath: "vue/composables/auto-generated-ws.ts",

@@ -5,17 +5,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// APIServerConfig is kept for backward compatibility.
-type APIServerConfig = runtime.APIServerConfig
-
-func DefaultAPIServerConfig() APIServerConfig {
-	return runtime.DefaultAPIServerConfig()
-}
-
-func BuildServerFromConfig(cfg APIServerConfig) (*gin.Engine, error) {
+func BuildServerFromConfig(cfg runtime.APIServerConfig) (*gin.Engine, error) {
 	return runtime.BuildServerFromConfig(cfg)
 }
 
-func RunServerFromConfig(cfg APIServerConfig) error {
+func RunServerFromConfig(cfg runtime.APIServerConfig) error {
 	return runtime.RunServerFromConfig(cfg)
 }
