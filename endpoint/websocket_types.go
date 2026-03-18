@@ -122,7 +122,7 @@ func (h *wsHub) count() int {
 // WebSocketClientsByPath stores all connected clients by websocket full path.
 // WebSocketClientsByPath 按 websocket 完整路径保存所有连接的客户端。
 // 注意：访问请使用 WebSocketClientsByPathMu 加锁。
-var WebSocketClientsByPath = map[string]map[string]*websocket.Conn{}
+var WebSocketClientsByPath = map[string]map[string]*wsClient{}
 
 // WebSocketClientsByPathMu guards WebSocketClientsByPath.
 // WebSocketClientsByPathMu 用于保护 WebSocketClientsByPath。
@@ -130,13 +130,13 @@ var WebSocketClientsByPathMu sync.RWMutex
 
 // SnapshotWebSocketClients returns a copy of current clients for the path.
 // SnapshotWebSocketClients 返回指定路径当前客户端的副本。
-func SnapshotWebSocketClients(path string) map[string]*websocket.Conn {
+func SnapshotWebSocketClients(path string) map[string]*wsClient {
 	WebSocketClientsByPathMu.RLock()
 	defer WebSocketClientsByPathMu.RUnlock()
 	src := WebSocketClientsByPath[path]
-	out := make(map[string]*websocket.Conn, len(src))
-	for id, conn := range src {
-		out[id] = conn
+	out := make(map[string]*wsClient, len(src))
+	for id, client := range src {
+		out[id] = client
 	}
 	return out
 }
@@ -146,9 +146,13 @@ func SnapshotWebSocketClients(path string) map[string]*websocket.Conn {
 func BroadcastWebSocketJSON(path string, message any) error {
 	clients := SnapshotWebSocketClients(path)
 	var firstErr error
-	for _, conn := range clients {
-		if err := conn.WriteJSON(message); err != nil && firstErr == nil {
-			firstErr = err
+	for id, client := range clients {
+		if err := client.send(message); err != nil {
+			unregisterWebSocketClient(path, id)
+			_ = client.conn.Close()
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
 	}
 	return firstErr
@@ -158,12 +162,17 @@ func BroadcastWebSocketJSON(path string, message any) error {
 // SendWebSocketJSON 向指定路径的某个客户端发送 JSON。
 func SendWebSocketJSON(path string, clientID string, message any) error {
 	WebSocketClientsByPathMu.RLock()
-	conn := WebSocketClientsByPath[path][clientID]
+	client := WebSocketClientsByPath[path][clientID]
 	WebSocketClientsByPathMu.RUnlock()
-	if conn == nil {
+	if client == nil {
 		return fmt.Errorf("websocket client not found: %s", clientID)
 	}
-	return conn.WriteJSON(message)
+	if err := client.send(message); err != nil {
+		unregisterWebSocketClient(path, clientID)
+		_ = client.conn.Close()
+		return err
+	}
+	return nil
 }
 
 // WebSocketContext provides access to the current connection and publish helpers.
@@ -291,7 +300,7 @@ func (s *WebSocketEndpoint) GinHandler() gin.HandlerFunc {
 			return
 		}
 		client := s.hub.add(conn)
-		s.registerClient(client.id, conn)
+		s.registerClient(client)
 		wsCtx := &WebSocketContext{
 			ID:       client.id,
 			Conn:     conn,
@@ -370,7 +379,7 @@ func (s *WebSocketEndpoint) SetFullPath(path string) {
 	s.fullPath = path
 }
 
-func (s *WebSocketEndpoint) registerClient(id string, conn *websocket.Conn) {
+func (s *WebSocketEndpoint) registerClient(client *wsClient) {
 	path := strings.TrimSpace(s.fullPath)
 	if path == "" {
 		return
@@ -378,20 +387,27 @@ func (s *WebSocketEndpoint) registerClient(id string, conn *websocket.Conn) {
 	WebSocketClientsByPathMu.Lock()
 	clients, ok := WebSocketClientsByPath[path]
 	if !ok {
-		clients = map[string]*websocket.Conn{}
+		clients = map[string]*wsClient{}
 		WebSocketClientsByPath[path] = clients
 	}
-	clients[id] = conn
+	clients[client.id] = client
 	WebSocketClientsByPathMu.Unlock()
 }
 
 func (s *WebSocketEndpoint) unregisterClient(id string) {
-	path := strings.TrimSpace(s.fullPath)
+	unregisterWebSocketClient(strings.TrimSpace(s.fullPath), id)
+}
+
+func unregisterWebSocketClient(path string, id string) {
 	if path == "" {
 		return
 	}
 	WebSocketClientsByPathMu.Lock()
 	clients := WebSocketClientsByPath[path]
+	if clients == nil {
+		WebSocketClientsByPathMu.Unlock()
+		return
+	}
 	delete(clients, id)
 	if len(clients) == 0 {
 		delete(WebSocketClientsByPath, path)

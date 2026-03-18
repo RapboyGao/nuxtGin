@@ -845,7 +845,7 @@ func TestGenerateWebSocketClientFromEndpoints_ValidationErrors(t *testing.T) {
 					MessageTypes:      []string{"chat:text"},
 				},
 			},
-			wantErr: "client payload map is required",
+			wantErr: "payload type is required",
 		},
 	}
 
@@ -885,7 +885,7 @@ func TestWebSocketAPIBuildGinGroup_PayloadMapValidation(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected payload mapping validation error")
 	}
-	if !strings.Contains(err.Error(), "client payload map is required") {
+	if !strings.Contains(err.Error(), "payload type is required") {
 		t.Fatalf("expected payload map validation error, got: %v", err)
 	}
 }

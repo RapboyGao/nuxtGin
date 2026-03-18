@@ -18,17 +18,10 @@ func validateWebSocketPayloadTypeMappings(meta WebSocketEndpointMeta) error {
 		if msgType == "" {
 			continue
 		}
-		if clientMap == nil {
-			return fmt.Errorf("client payload map is required when MessageTypes is set (missing %q)", msgType)
-		}
-		if serverMap == nil {
-			return fmt.Errorf("server payload map is required when MessageTypes is set (missing %q)", msgType)
-		}
-		if _, ok := clientMap[msgType]; !ok {
-			return fmt.Errorf("client payload type is required for message type %q", msgType)
-		}
-		if _, ok := serverMap[msgType]; !ok {
-			return fmt.Errorf("server payload type is required for message type %q", msgType)
+		_, hasClient := clientMap[msgType]
+		_, hasServer := serverMap[msgType]
+		if !hasClient && !hasServer {
+			return fmt.Errorf("payload type is required for message type %q in either client or server map", msgType)
 		}
 	}
 	return nil

@@ -103,6 +103,9 @@ func (c APIServerConfig) normalized() APIServerConfig {
 // BuildServerFromConfig builds a gin engine from APIServerConfig and exports TS if configured.
 // BuildServerFromConfig 根据 APIServerConfig 构建 gin engine，并按配置导出 TS。
 func BuildServerFromConfig(cfg APIServerConfig) (*gin.Engine, error) {
+	if _, err := LoadConfig(); err != nil {
+		return nil, err
+	}
 	cfg = cfg.normalized()
 
 	if GetGinMode() == gin.DebugMode {
@@ -158,6 +161,9 @@ func BuildServerFromConfig(cfg APIServerConfig) (*gin.Engine, error) {
 // RunServerFromConfig configures gin mode, logs server info, builds router, and runs it.
 // RunServerFromConfig 会配置 gin mode、打印日志、构建路由并启动服务。
 func RunServerFromConfig(cfg APIServerConfig) error {
+	if _, err := LoadConfig(); err != nil {
+		return err
+	}
 	ConfigureGinMode()
 	cfg = cfg.normalized()
 	utils.LogServerWithBasePath(false, cfg.Server.GinPort, cfg.Server.BaseUrl)
