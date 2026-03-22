@@ -49,9 +49,6 @@ func (s ServerAPI) BuildGinGroup(engine *gin.Engine) (*gin.RouterGroup, error) {
 // ExportTS 会生成 axios TypeScript 到相对路径；
 // 若 relativeTSPath 为空，则默认 vue/composables/my-schemas.ts。
 func (s ServerAPI) ExportTS(relativeTSPath string) error {
-	if !shouldExportTSInCurrentEnv() {
-		return nil
-	}
 	if strings.TrimSpace(relativeTSPath) == "" {
 		relativeTSPath = "vue/composables/my-schemas.ts"
 	}
@@ -81,45 +78,6 @@ func GenerateAxiosFromEndpoints(basePath string, endpoints []EndpointLike) (stri
 // ExportAxiosFromEndpointsToTSFile 将 Endpoint 生成的 TS 代码写入文件。
 func ExportAxiosFromEndpointsToTSFile(basePath string, endpoints []EndpointLike, relativeTSPath string) error {
 	return exportAxiosFromEndpointsToTSFile(basePath, "", endpoints, relativeTSPath)
-}
-
-// ApplyEndpoints registers endpoints to gin.Engine and exports TS in one call.
-// Defaults: basePath="/api-go/v1", tsPath="vue/composables/auto-generated-api.ts".
-// ApplyEndpoints 一次性完成 gin 注册与 TS 导出。
-// 默认 basePath 为 /api-go/v1，TS 输出路径为 vue/composables/auto-generated-api.ts。
-func ApplyEndpoints(engine *gin.Engine, endpoints []EndpointLike) (*gin.RouterGroup, error) {
-	basePath := "/api-go/v1"
-	relativeTSPath := "vue/composables/auto-generated-api.ts"
-	api := ServerAPI{
-		BasePath:  basePath,
-		GroupPath: basePath,
-		Endpoints: endpoints,
-	}
-	return api.Build(engine, relativeTSPath)
-}
-
-// ApplyEndpointsDevOnly registers endpoints in all modes, but only exports TS in gin.DebugMode.
-// Defaults: basePath="/api-go/v1", tsPath="vue/composables/auto-generated-api.ts".
-// ApplyEndpointsDevOnly 会在所有模式下注册路由，但仅在 gin.DebugMode 下生成 TS。
-// 默认 basePath 为 /api-go/v1，TS 输出路径为 vue/composables/auto-generated-api.ts。
-func ApplyEndpointsDevOnly(engine *gin.Engine, endpoints []EndpointLike) (*gin.RouterGroup, error) {
-	basePath := "/api-go/v1"
-	relativeTSPath := "vue/composables/auto-generated-api.ts"
-	api := ServerAPI{
-		BasePath:  basePath,
-		GroupPath: basePath,
-		Endpoints: endpoints,
-	}
-	group, err := api.BuildGinGroup(engine)
-	if err != nil {
-		return nil, err
-	}
-	if gin.Mode() == gin.DebugMode {
-		if err := api.ExportTS(relativeTSPath); err != nil {
-			return nil, err
-		}
-	}
-	return group, nil
 }
 
 // WebSocketAPI describes websocket endpoints, supports gin registration and TS export.
@@ -167,9 +125,6 @@ func (s WebSocketAPI) BuildGinGroup(engine *gin.Engine) (*gin.RouterGroup, error
 // ExportTS generates websocket TypeScript to a relative path.
 // ExportTS 会生成 websocket TypeScript 到相对路径。
 func (s WebSocketAPI) ExportTS(relativeTSPath string) error {
-	if !shouldExportTSInCurrentEnv() {
-		return nil
-	}
 	s.applyDefaults()
 	if strings.TrimSpace(relativeTSPath) == "" {
 		relativeTSPath = "vue/composables/auto-generated-ws.ts"
@@ -204,45 +159,6 @@ func (s WebSocketAPI) applyDefaults() {
 			ws.ServerMessageType = s.DefaultServerMessageType
 		}
 	}
-}
-
-// ApplyWebSocketEndpoints registers endpoints to gin.Engine and exports TS in one call.
-// Defaults: basePath="/ws-go/v1", tsPath="vue/composables/auto-generated-ws.ts".
-// ApplyWebSocketEndpoints 一次性完成 gin 注册与 TS 导出。
-// 默认 basePath 为 /ws-go/v1，TS 输出路径为 vue/composables/auto-generated-ws.ts。
-func ApplyWebSocketEndpoints(engine *gin.Engine, endpoints []WebSocketEndpointLike) (*gin.RouterGroup, error) {
-	basePath := "/ws-go/v1"
-	relativeTSPath := "vue/composables/auto-generated-ws.ts"
-	api := WebSocketAPI{
-		BasePath:  basePath,
-		GroupPath: basePath,
-		Endpoints: endpoints,
-	}
-	return api.Build(engine, relativeTSPath)
-}
-
-// ApplyWebSocketEndpointsDevOnly registers endpoints in all modes, but only exports TS in gin.DebugMode.
-// Defaults: basePath="/ws-go/v1", tsPath="vue/composables/auto-generated-ws.ts".
-// ApplyWebSocketEndpointsDevOnly 会在所有模式下注册路由，但仅在 gin.DebugMode 下生成 TS。
-// 默认 basePath 为 /ws-go/v1，TS 输出路径为 vue/composables/auto-generated-ws.ts。
-func ApplyWebSocketEndpointsDevOnly(engine *gin.Engine, endpoints []WebSocketEndpointLike) (*gin.RouterGroup, error) {
-	basePath := "/ws-go/v1"
-	relativeTSPath := "vue/composables/auto-generated-ws.ts"
-	api := WebSocketAPI{
-		BasePath:  basePath,
-		GroupPath: basePath,
-		Endpoints: endpoints,
-	}
-	group, err := api.BuildGinGroup(engine)
-	if err != nil {
-		return nil, err
-	}
-	if gin.Mode() == gin.DebugMode {
-		if err := api.ExportTS(relativeTSPath); err != nil {
-			return nil, err
-		}
-	}
-	return group, nil
 }
 
 func registerWebSocketHandlers(router gin.IRouter, groupPath string, endpoints []WebSocketEndpointLike) error {

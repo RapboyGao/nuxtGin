@@ -33,7 +33,7 @@ go get github.com/RapboyGao/nuxtGin
 
 ## ⚙️ Config
 
-Create `server.config.json` in your project root:
+`server.config.json` is still supported as the default runtime config source:
 
 ```json
 {
@@ -43,6 +43,15 @@ Create `server.config.json` in your project root:
 }
 ```
 
+If you already provide a complete `runtime.APIServerConfig.Server`, the runtime no longer requires `server.config.json`.
+
+Mode resolution order is now:
+
+1. `APIServerConfig.GinMode`
+2. `NUXT_GIN_MODE`
+3. `GIN_MODE`
+4. filesystem fallback
+
 ## 🧭 Quick Start
 
 ```go
@@ -51,11 +60,21 @@ package main
 import (
     "github.com/RapboyGao/nuxtGin"
     "github.com/RapboyGao/nuxtGin/endpoint"
+    "github.com/RapboyGao/nuxtGin/runtime"
+    "github.com/gin-gonic/gin"
 )
 
 func main() {
-    endpoints := []endpoint.EndpointLike{}
-    nuxtGin.MustRunServer(endpoints)
+    cfg := runtime.DefaultAPIServerConfig([]endpoint.EndpointLike{}, nil)
+    cfg.Server = runtime.ServerRuntimeConfig{
+        GinPort:  8080,
+        NuxtPort: 3000,
+        BaseUrl:  "/",
+    }
+    cfg.GinMode = gin.DebugMode
+    if err := nuxtGin.RunServerFromConfig(cfg); err != nil {
+        panic(err)
+    }
 }
 ```
 
@@ -96,12 +115,20 @@ func buildEndpoints() []endpoint.EndpointLike {
 }
 ```
 
-### 2) Register + export TS in one call
+### 2) Register and export explicitly
 
 ```go
 engine := gin.Default()
-_, err := endpoint.ApplyEndpoints(engine, buildEndpoints())
+api := endpoint.ServerAPI{
+    BasePath:  "/api-go",
+    GroupPath: "/v1",
+    Endpoints: buildEndpoints(),
+}
+_, err := api.BuildGinGroup(engine)
 if err != nil {
+    panic(err)
+}
+if err := api.ExportTS("vue/composables/auto-generated-api.ts"); err != nil {
     panic(err)
 }
 ```
@@ -181,8 +208,16 @@ Then:
 
 Validation rule:
 
-- if `MessageTypes` is set, every message type must exist in both client/server payload maps
+- if `MessageTypes` is set, every message type must exist in at least one payload map
+- server-only and client-only message types are both allowed
 - invalid mapping fails fast during build/export
+
+Runtime notes:
+
+- `server.config.json` is used only as a fallback source when `APIServerConfig.Server` is incomplete
+- invalid ports or an invalid `baseUrl` fail fast instead of silently falling back
+- websocket connections now set read limits, read deadlines, pong extension, and server-side ping heartbeats
+- server-side websocket broadcast now uses a serialized write path to avoid concurrent writes on the same connection
 
 ### `TypedWebSocketClient` runtime members
 
@@ -245,17 +280,19 @@ This never blocks generation.
 ## 🗂️ Project Layout
 
 ```text
-runtime/                 # server runtime (config, mode, vue serving, bootstrap)
-runtime_compat.go        # compatibility exports
-endpoint/                # HTTP/WS endpoint layer + TS generators
-utils/                   # utility helpers
+runtime/                 # runtime config, mode resolution, vue serving, bootstrap
+runtime_compat.go        # top-level Build/Run/Export re-exports
+endpoint/                # HTTP/WS endpoint definitions and TS generators
+internal/runtimeutil/    # internal runtime logging and path helpers
+utils/                   # legacy generic helpers (not part of the core runtime surface)
 README.md
-README.zh-CN.md
 ```
 
 ## 🔎 Notes
 
-- Dev mode is inferred when `node_modules` exists in the project root.
+- `nuxtGin` owns Go runtime, endpoint definitions, and TS generation.
+- `nuxt-gin-tools` owns local dev/build/pack workflows.
+- `nuxt-gin-starter` is the application template that wires both together.
 - If you need fully custom Gin handler behavior, use `CustomEndpoint`.
 - Recommended starter project: [Nuxt Gin Starter](https://github.com/RapboyGao/nuxt-gin-starter)
 
@@ -284,7 +321,7 @@ go get github.com/RapboyGao/nuxtGin
 
 ### ⚙️ 配置
 
-在项目根目录创建 `server.config.json`：
+`server.config.json` 仍然支持作为默认运行时配置来源：
 
 ```json
 {
@@ -294,6 +331,15 @@ go get github.com/RapboyGao/nuxtGin
 }
 ```
 
+如果你已经完整提供了 `runtime.APIServerConfig.Server`，运行时将不再强依赖 `server.config.json`。
+
+当前模式解析顺序：
+
+1. `APIServerConfig.GinMode`
+2. `NUXT_GIN_MODE`
+3. `GIN_MODE`
+4. 文件系统兜底判断
+
 ### 🧭 快速开始
 
 ```go
@@ -302,11 +348,21 @@ package main
 import (
     "github.com/RapboyGao/nuxtGin"
     "github.com/RapboyGao/nuxtGin/endpoint"
+    "github.com/RapboyGao/nuxtGin/runtime"
+    "github.com/gin-gonic/gin"
 )
 
 func main() {
-    endpoints := []endpoint.EndpointLike{}
-    nuxtGin.MustRunServer(endpoints)
+    cfg := runtime.DefaultAPIServerConfig([]endpoint.EndpointLike{}, nil)
+    cfg.Server = runtime.ServerRuntimeConfig{
+        GinPort:  8080,
+        NuxtPort: 3000,
+        BaseUrl:  "/",
+    }
+    cfg.GinMode = gin.DebugMode
+    if err := nuxtGin.RunServerFromConfig(cfg); err != nil {
+        panic(err)
+    }
 }
 ```
 
@@ -327,12 +383,20 @@ type GetUserResp struct {
 }
 ```
 
-#### 2) 一次完成注册与导出
+#### 2) 显式完成注册与导出
 
 ```go
 engine := gin.Default()
-_, err := endpoint.ApplyEndpoints(engine, buildEndpoints())
+api := endpoint.ServerAPI{
+    BasePath:  "/api-go",
+    GroupPath: "/v1",
+    Endpoints: buildEndpoints(),
+}
+_, err := api.BuildGinGroup(engine)
 if err != nil {
+    panic(err)
+}
+if err := api.ExportTS("vue/composables/auto-generated-api.ts"); err != nil {
     panic(err)
 }
 ```
@@ -391,8 +455,16 @@ type ChatEnvelope struct {
 
 校验规则：
 
-- 只要设置了 `MessageTypes`，每个 message type 必须同时存在 client/server payload 映射
+- 只要设置了 `MessageTypes`，每个 message type 至少要出现在一侧 payload 映射中
+- 允许仅服务端发送或仅客户端发送的 message type
 - 映射不完整会在 build/export 阶段直接报错（fail fast）
+
+运行时说明：
+
+- 只有在 `APIServerConfig.Server` 不完整时，才会回退读取 `server.config.json`
+- 端口或 `baseUrl` 不合法会直接报错，而不是静默回退
+- WebSocket 连接现在会设置 read limit、read deadline、pong 延长和服务端 ping 心跳
+- 服务端 WebSocket 广播会走串行化写入路径，避免同一连接上的并发写问题
 
 ### 🏷️ `tsdoc` 与 `tsunion`
 
@@ -435,17 +507,19 @@ Strict bool   `json:"strict" tsunion:"true,false"`
 ### 🗂️ 项目结构
 
 ```text
-runtime/                 # server runtime (config, mode, vue serving, bootstrap)
-runtime_compat.go        # compatibility exports
-endpoint/                # HTTP/WS endpoint layer + TS generators
-utils/                   # utility helpers
+runtime/                 # 运行时配置、模式解析、Vue 服务与启动入口
+runtime_compat.go        # 顶层 Build/Run/Export 兼容导出
+endpoint/                # HTTP/WS Endpoint 定义与 TS 生成器
+internal/runtimeutil/    # 运行时内部日志与路径辅助
+utils/                   # 遗留通用 helper，不属于核心 runtime API
 README.md
-README.zh-CN.md
 ```
 
 ### 🔎 说明
 
-- 项目根目录存在 `node_modules` 时会判定为开发模式。
+- `nuxtGin` 负责 Go runtime、endpoint 定义和 TS generation bridge。
+- `nuxt-gin-tools` 负责本地开发、构建、打包 CLI。
+- `nuxt-gin-starter` 负责模板工程和应用集成。
 - 如需完全自定义 Gin handler，可使用 `CustomEndpoint`。
 - 推荐 Starter 项目：[Nuxt Gin Starter](https://github.com/RapboyGao/nuxt-gin-starter)
 

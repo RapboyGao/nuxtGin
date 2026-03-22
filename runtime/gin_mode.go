@@ -1,36 +1,36 @@
 package runtime
 
 import (
-	"github.com/RapboyGao/nuxtGin/utils"
+	"os"
+	"strings"
+
+	"github.com/RapboyGao/nuxtGin/internal/runtimeutil"
 	"github.com/arduino/go-paths-helper" // 文件路径操作工具
 	"github.com/gin-gonic/gin"           // Gin Web框架
 )
 
-/**
- * 获取Gin框架运行模式
- * 根据项目目录下特征文件判断运行模式：
- * - 存在 node_modules 或 api_default.go 或 vue/pages/index.vue：开发模式（默认模式，输出详细日志）
- * - 不存在上述文件，但存在 vue/.output/public：生产模式（禁用详细日志，提高性能）
- * - 其它情况：生产模式
- */
-func GetGinMode() string {
-	// 创建指向node_modules目录的路径对象
-	path1 := paths.New("node_modules")
+func normalizeGinModeValue(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "debug":
+		return gin.DebugMode
+	case "release":
+		return gin.ReleaseMode
+	default:
+		return ""
+	}
+}
 
+func detectGinModeByFilesystem() string {
+	path1 := paths.New("node_modules")
 	path2 := paths.New("server/api/api_default.go")
 	path3 := paths.New("vue/pages/index.vue")
 	path4 := paths.New("vue/.output/public")
 
-	// 将路径转换为绝对路径（基于当前工作目录）
 	path1.ToAbs()
-	// 转换api_default.go的绝对路径
 	path2.ToAbs()
-	// 转换vue/pages/index.vue的绝对路径
 	path3.ToAbs()
-	// 转换vue/.output/public的绝对路径
 	path4.ToAbs()
 
-	// 判断node_modules目录是否存在
 	if path1.IsDir() || !path2.NotExist() || !path3.NotExist() {
 		return gin.DebugMode
 	}
@@ -41,18 +41,41 @@ func GetGinMode() string {
 }
 
 /**
+ * 获取Gin框架运行模式
+ * 根据项目目录下特征文件判断运行模式：
+ * - 存在 node_modules 或 api_default.go 或 vue/pages/index.vue：开发模式（默认模式，输出详细日志）
+ * - 不存在上述文件，但存在 vue/.output/public：生产模式（禁用详细日志，提高性能）
+ * - 其它情况：生产模式
+ */
+func GetGinMode() string {
+	return ResolveGinMode("")
+}
+
+func ResolveGinMode(explicitMode string) string {
+	if mode := normalizeGinModeValue(explicitMode); mode != "" {
+		return mode
+	}
+	if mode := normalizeGinModeValue(os.Getenv("NUXT_GIN_MODE")); mode != "" {
+		return mode
+	}
+	if mode := normalizeGinModeValue(os.Getenv("GIN_MODE")); mode != "" {
+		return mode
+	}
+	return detectGinModeByFilesystem()
+}
+
+/**
  * 配置Gin框架运行模式
  * 根据项目目录下特征文件决定运行模式。
  */
-func ConfigureGinMode() {
-	mode := GetGinMode()
+func ConfigureGinMode(explicitMode string) string {
+	mode := ResolveGinMode(explicitMode)
 	gin.SetMode(mode)
 
-	// 开发环境：存在node_modules目录，使用调试模式
 	if mode == gin.DebugMode {
-		utils.Print("Gin mode: Debug (development) / Gin模式：调试（开发环境）")
+		runtimeutil.Print("Gin mode: Debug (development) / Gin模式：调试（开发环境）")
 	} else {
-		// 生产环境：不存在node_modules目录，使用生产模式
-		utils.Print("Gin mode: Release (production) / Gin模式：发布（生产环境）")
+		runtimeutil.Print("Gin mode: Release (production) / Gin模式：发布（生产环境）")
 	}
+	return mode
 }

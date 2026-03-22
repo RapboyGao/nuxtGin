@@ -8,7 +8,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 
-	"github.com/RapboyGao/nuxtGin/utils"
+	"github.com/RapboyGao/nuxtGin/internal/runtimeutil"
 	"github.com/gin-gonic/gin"
 )
 
@@ -38,7 +38,7 @@ func ServeVue(engine *gin.Engine) {
  */
 func ServeVueProduction(engine *gin.Engine) {
 	// 获取Vue静态文件目录路径
-	vueDirectory := utils.Dir("vue", ".output", "public")
+	vueDirectory := runtimeutil.Dir("vue", ".output", "public")
 
 	// 设置JS文件的MIME类型，确保正确解析
 	mime.AddExtensionType(".js", "application/javascript")

@@ -19,6 +19,9 @@ const (
 	defaultWSReadBufferSize  = 1024
 	defaultWSWriteBufferSize = 1024
 	defaultWSWriteTimeout    = 10 * time.Second
+	defaultWSReadLimit       = 1 << 20
+	defaultWSPongWait        = 60 * time.Second
+	defaultWSPingPeriod      = (defaultWSPongWait * 9) / 10
 )
 
 // NoMessage is a marker type meaning "no websocket message payload".
@@ -47,9 +50,11 @@ type WebSocketEndpointLike interface {
 }
 
 type wsClient struct {
-	id   string
-	conn *websocket.Conn
-	mu   sync.Mutex
+	id        string
+	conn      *websocket.Conn
+	mu        sync.Mutex
+	closeOnce sync.Once
+	closed    chan struct{}
 }
 
 func (c *wsClient) send(message any) error {
@@ -59,6 +64,22 @@ func (c *wsClient) send(message any) error {
 		return err
 	}
 	return c.conn.WriteJSON(message)
+}
+
+func (c *wsClient) ping() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.conn.SetWriteDeadline(time.Now().Add(defaultWSWriteTimeout)); err != nil {
+		return err
+	}
+	return c.conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(defaultWSWriteTimeout))
+}
+
+func (c *wsClient) close() {
+	c.closeOnce.Do(func() {
+		close(c.closed)
+		_ = c.conn.Close()
+	})
 }
 
 type wsHub struct {
@@ -73,7 +94,7 @@ func newWebSocketHub() *wsHub {
 }
 
 func (h *wsHub) add(conn *websocket.Conn) *wsClient {
-	client := &wsClient{id: uuid.NewString(), conn: conn}
+	client := &wsClient{id: uuid.NewString(), conn: conn, closed: make(chan struct{})}
 	h.mu.Lock()
 	h.clients[client.id] = client
 	h.mu.Unlock()
@@ -106,8 +127,12 @@ func (h *wsHub) broadcast(message any) error {
 
 	var firstErr error
 	for _, c := range clients {
-		if err := c.send(message); err != nil && firstErr == nil {
-			firstErr = err
+		if err := c.send(message); err != nil {
+			h.remove(c.id)
+			c.close()
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
 	}
 	return firstErr
@@ -119,21 +144,37 @@ func (h *wsHub) count() int {
 	return len(h.clients)
 }
 
-// WebSocketClientsByPath stores all connected clients by websocket full path.
-// WebSocketClientsByPath 按 websocket 完整路径保存所有连接的客户端。
-// 注意：访问请使用 WebSocketClientsByPathMu 加锁。
-var WebSocketClientsByPath = map[string]map[string]*wsClient{}
+var (
+	webSocketHubsMu sync.RWMutex
+	webSocketHubs   = map[string]*wsHub{}
+)
 
-// WebSocketClientsByPathMu guards WebSocketClientsByPath.
-// WebSocketClientsByPathMu 用于保护 WebSocketClientsByPath。
-var WebSocketClientsByPathMu sync.RWMutex
+func registerWebSocketHub(path string, hub *wsHub) {
+	if strings.TrimSpace(path) == "" || hub == nil {
+		return
+	}
+	webSocketHubsMu.Lock()
+	webSocketHubs[path] = hub
+	webSocketHubsMu.Unlock()
+}
+
+func hubForPath(path string) *wsHub {
+	webSocketHubsMu.RLock()
+	hub := webSocketHubs[path]
+	webSocketHubsMu.RUnlock()
+	return hub
+}
 
 // SnapshotWebSocketClients returns a copy of current clients for the path.
 // SnapshotWebSocketClients 返回指定路径当前客户端的副本。
 func SnapshotWebSocketClients(path string) map[string]*wsClient {
-	WebSocketClientsByPathMu.RLock()
-	defer WebSocketClientsByPathMu.RUnlock()
-	src := WebSocketClientsByPath[path]
+	hub := hubForPath(path)
+	if hub == nil {
+		return map[string]*wsClient{}
+	}
+	hub.mu.RLock()
+	defer hub.mu.RUnlock()
+	src := hub.clients
 	out := make(map[string]*wsClient, len(src))
 	for id, client := range src {
 		out[id] = client
@@ -144,35 +185,21 @@ func SnapshotWebSocketClients(path string) map[string]*wsClient {
 // BroadcastWebSocketJSON sends a JSON message to all clients of the path.
 // BroadcastWebSocketJSON 向指定路径的所有客户端发送 JSON。
 func BroadcastWebSocketJSON(path string, message any) error {
-	clients := SnapshotWebSocketClients(path)
-	var firstErr error
-	for id, client := range clients {
-		if err := client.send(message); err != nil {
-			unregisterWebSocketClient(path, id)
-			_ = client.conn.Close()
-			if firstErr == nil {
-				firstErr = err
-			}
-		}
+	hub := hubForPath(path)
+	if hub == nil {
+		return nil
 	}
-	return firstErr
+	return hub.broadcast(message)
 }
 
 // SendWebSocketJSON sends a JSON message to a specific client of the path.
 // SendWebSocketJSON 向指定路径的某个客户端发送 JSON。
 func SendWebSocketJSON(path string, clientID string, message any) error {
-	WebSocketClientsByPathMu.RLock()
-	client := WebSocketClientsByPath[path][clientID]
-	WebSocketClientsByPathMu.RUnlock()
-	if client == nil {
-		return fmt.Errorf("websocket client not found: %s", clientID)
+	hub := hubForPath(path)
+	if hub == nil {
+		return fmt.Errorf("websocket path not found: %s", path)
 	}
-	if err := client.send(message); err != nil {
-		unregisterWebSocketClient(path, clientID)
-		_ = client.conn.Close()
-		return err
-	}
-	return nil
+	return hub.sendTo(clientID, message)
 }
 
 // WebSocketContext provides access to the current connection and publish helpers.
@@ -233,8 +260,11 @@ type WebSocketEndpoint struct {
 	MessageHandlers   map[string]func(payload json.RawMessage, ctx *WebSocketContext) (any, error)
 	MessageTypeGetter func(message any) (msgType string, payload json.RawMessage, err error)
 
-	hub      *wsHub
-	fullPath string
+	hub        *wsHub
+	fullPath   string
+	PingPeriod time.Duration
+	PongWait   time.Duration
+	ReadLimit  int64
 }
 
 // NewWebSocketEndpoint constructs a WebSocketEndpoint with initialized hub.
@@ -245,6 +275,9 @@ func NewWebSocketEndpoint() *WebSocketEndpoint {
 		ClientMessageType:  reflect.TypeOf(WebSocketMessage{}),
 		ClientPayloadTypes: map[string]reflect.Type{},
 		ServerPayloadTypes: map[string]reflect.Type{},
+		PingPeriod:         defaultWSPingPeriod,
+		PongWait:           defaultWSPongWait,
+		ReadLimit:          defaultWSReadLimit,
 	}
 }
 
@@ -299,20 +332,32 @@ func (s *WebSocketEndpoint) GinHandler() gin.HandlerFunc {
 		if err != nil {
 			return
 		}
+		pongWait := s.PongWait
+		if pongWait <= 0 {
+			pongWait = defaultWSPongWait
+		}
+		readLimit := s.ReadLimit
+		if readLimit <= 0 {
+			readLimit = defaultWSReadLimit
+		}
+		conn.SetReadLimit(readLimit)
+		_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+		conn.SetPongHandler(func(string) error {
+			return conn.SetReadDeadline(time.Now().Add(pongWait))
+		})
 		client := s.hub.add(conn)
-		s.registerClient(client)
 		wsCtx := &WebSocketContext{
 			ID:       client.id,
 			Conn:     conn,
 			Request:  ctx.Request,
 			endpoint: s,
 		}
+		s.startHeartbeat(client)
 
 		if s.OnConnect != nil {
 			if err := s.OnConnect(wsCtx); err != nil {
 				s.hub.remove(client.id)
-				s.unregisterClient(client.id)
-				_ = conn.Close()
+				client.close()
 				return
 			}
 		}
@@ -338,8 +383,7 @@ func (s *WebSocketEndpoint) GinHandler() gin.HandlerFunc {
 		}
 
 		s.hub.remove(client.id)
-		s.unregisterClient(client.id)
-		_ = conn.Close()
+		client.close()
 		if s.OnDisconnect != nil {
 			s.OnDisconnect(wsCtx, readErr)
 		}
@@ -371,48 +415,16 @@ func (s *WebSocketEndpoint) ensureHub() {
 	if s.hub == nil {
 		s.hub = newWebSocketHub()
 	}
+	if strings.TrimSpace(s.fullPath) != "" {
+		registerWebSocketHub(s.fullPath, s.hub)
+	}
 }
 
 // SetFullPath stores the full websocket path (including group path).
 // SetFullPath 保存 websocket 完整路径（包含 group path）。
 func (s *WebSocketEndpoint) SetFullPath(path string) {
 	s.fullPath = path
-}
-
-func (s *WebSocketEndpoint) registerClient(client *wsClient) {
-	path := strings.TrimSpace(s.fullPath)
-	if path == "" {
-		return
-	}
-	WebSocketClientsByPathMu.Lock()
-	clients, ok := WebSocketClientsByPath[path]
-	if !ok {
-		clients = map[string]*wsClient{}
-		WebSocketClientsByPath[path] = clients
-	}
-	clients[client.id] = client
-	WebSocketClientsByPathMu.Unlock()
-}
-
-func (s *WebSocketEndpoint) unregisterClient(id string) {
-	unregisterWebSocketClient(strings.TrimSpace(s.fullPath), id)
-}
-
-func unregisterWebSocketClient(path string, id string) {
-	if path == "" {
-		return
-	}
-	WebSocketClientsByPathMu.Lock()
-	clients := WebSocketClientsByPath[path]
-	if clients == nil {
-		WebSocketClientsByPathMu.Unlock()
-		return
-	}
-	delete(clients, id)
-	if len(clients) == 0 {
-		delete(WebSocketClientsByPath, path)
-	}
-	WebSocketClientsByPathMu.Unlock()
+	registerWebSocketHub(path, s.hub)
 }
 
 func (s *WebSocketEndpoint) readClientMessage(conn *websocket.Conn) (any, error) {
@@ -428,6 +440,29 @@ func (s *WebSocketEndpoint) readClientMessage(conn *websocket.Conn) (any, error)
 		return valPtr.Interface(), nil
 	}
 	return valPtr.Elem().Interface(), nil
+}
+
+func (s *WebSocketEndpoint) startHeartbeat(client *wsClient) {
+	pingPeriod := s.PingPeriod
+	if pingPeriod <= 0 {
+		pingPeriod = defaultWSPingPeriod
+	}
+	go func() {
+		ticker := time.NewTicker(pingPeriod)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := client.ping(); err != nil {
+					s.hub.remove(client.id)
+					client.close()
+					return
+				}
+			case <-client.closed:
+				return
+			}
+		}
+	}()
 }
 
 func (s *WebSocketEndpoint) handleMessage(message any, ctx *WebSocketContext) (any, error) {

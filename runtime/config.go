@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/RapboyGao/nuxtGin/utils"
+	"github.com/RapboyGao/nuxtGin/internal/runtimeutil"
 	"github.com/arduino/go-paths-helper"   // 文件路径操作工具
 	jsoniter "github.com/json-iterator/go" // 高性能JSON处理库
 )
@@ -95,9 +95,13 @@ func LoadConfig() (*ServerRuntimeConfig, error) {
 	return GetConfig, nil
 }
 
+func SetActiveConfig(config ServerRuntimeConfig) {
+	*GetConfig = config
+}
+
 func LogServer() {
 	if _, err := LoadConfig(); err != nil {
 		panic(err)
 	}
-	utils.LogServerWithBasePath(false, GetConfig.GinPort, GetConfig.BaseUrl)
+	runtimeutil.LogServerWithBasePath(false, GetConfig.GinPort, GetConfig.BaseUrl)
 }
